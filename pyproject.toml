@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "siam_vqe"
+version = "0.1.0"
+description = "VQE for single-impurity Anderson models on Qiskit, validated against EDRIXS."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Liam Schmidt" }]
+license = { text = "MIT" }
+dependencies = [
+    "qiskit~=1.2",
+    "qiskit-aer>=0.15",
+    "qiskit-nature~=0.7",
+    "qiskit-algorithms>=0.3",
+    "qiskit-ibm-runtime>=0.25",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+    "nbconvert>=7.16",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["siam_vqe"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # let formatter handle line length
+
+[tool.ruff.lint.per-file-ignores]
+"siam_vqe/__init__.py" = ["F401"]
+"siam_vqe/hamiltonian.py" = ["N803", "RUF002"]
+"siam_vqe/reference_edrixs.py" = ["N803"]
+"tests/test_hamiltonian.py" = ["N803"]
+"tests/test_observables.py" = ["N802", "N803", "N806"]
+"tests/test_reference_edrixs.py" = ["N802", "N803"]
+"tests/test_vqe_runner.py" = ["N803"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["siam_vqe"]
+
+[[tool.mypy.overrides]]
+module = ["qiskit.*", "qiskit_nature.*", "qiskit_algorithms.*", "qiskit_aer.*", "qiskit_ibm_runtime.*", "scipy.*", "matplotlib.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"

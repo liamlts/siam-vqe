@@ -1,0 +1,24 @@
+{
+  "backend": "ibm_marrakesh",
+  "submitted_at": 1779681228.09841,
+  "submitted_at_iso": "2026-05-25T03:53:48Z",
+  "job_ids": {
+    "hw_L0": "d89sfitg7okc73ep3du0",
+    "hw_L1": "d89sfiqs46sc73fb21bg",
+    "hw_L2": "d89sfj2s46sc73fb21c0"
+  },
+  "shots": 8192,
+  "circuit_depth": 14,
+  "circuit_2q_gates": 2,
+  "circuit_ops": {
+    "rz": 11,
+    "sx": 11,
+    "cz": 2
+  },
+  "x_star": [
+    0.04377872779978732,
+    0.04377864467163784,
+    -0.00013806009158856298
+  ],
+  "translation_method": "translator"
+}

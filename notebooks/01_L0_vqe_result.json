@@ -1,0 +1,63 @@
+{
+  "system": {
+    "U": 4.0,
+    "t": 1.0,
+    "eps": 0.0,
+    "num_particles": [
+      1,
+      1
+    ]
+  },
+  "ansatz": {
+    "name": "EfficientSU2",
+    "reps": 3,
+    "num_parameters": 16
+  },
+  "optimizer": "COBYLA",
+  "maxiter": 600,
+  "vqe_energy": -0.8284271190460202,
+  "ed_energy": -0.8284271247461901,
+  "validations": {
+    "layer_1_energy_match": {
+      "passed": true,
+      "delta": 5.7001698916536725e-09,
+      "tol": 0.001
+    },
+    "layer_2_state_overlap": {
+      "passed": true,
+      "overlap": 0.999999995912626,
+      "threshold": 0.99
+    },
+    "layer_3_ansatz_expressivity": {
+      "passed": true,
+      "max_overlap": 0.9999999999816505,
+      "threshold": 0.99
+    },
+    "layer_4_multistart_spread": {
+      "passed": true,
+      "best": -0.8284271232504972,
+      "median": -0.8284271183901109,
+      "spread": 9.32304633494141e-09
+    },
+    "layer_5_observables": {
+      "n_total": {
+        "passed": true,
+        "vqe": 1.9999999999999991,
+        "ed": 2.0,
+        "rel_err": 4.440892098500626e-16
+      },
+      "S2": {
+        "passed": true,
+        "vqe": 7.19204643078535e-09,
+        "ed": -1.5318704855490796e-16,
+        "rel_err": 7.192046583972399e-05
+      },
+      "double_occ": {
+        "passed": true,
+        "vqe": 0.14646045220466042,
+        "ed": 0.14644660940672624,
+        "rel_err": 9.452453689611534e-05
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "phase": 2,
+  "level": "L1",
+  "parameters": {
+    "U": 7.3,
+    "V": 2.06,
+    "eps_d": -40.85288888888889,
+    "eps_p": 13.375111111111114
+  },
+  "ed_energy": -74.58626153180293,
+  "noiseless_energy": -74.58626153180182,
+  "noiseless_params": [
+    0.04377872779978732,
+    0.04377864467163784,
+    -0.00013806009158856298
+  ],
+  "multistart_spread": 1.4443742202274734e-08,
+  "fake_marrakesh_energy": -73.9719283941576,
+  "fake_marrakesh_std": 0.1533725332839597,
+  "validation_layers": {
+    "1_energy_match": true,
+    "2_state_overlap": true,
+    "3_expressivity": true,
+    "4_multistart_spread": true,
+    "5_observable_agreement": true
+  }
+}

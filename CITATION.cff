@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: "siam_vqe: VQE for single-impurity Anderson models in Qiskit"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - given-names: Liam
+    family-names: Schmidt
+    email: schmidt.lia@northeastern.edu
+repository-code: "https://github.com/liamlts/siam-vqe"
+abstract: >-
+  A Variational Quantum Eigensolver workflow for single-impurity Anderson
+  models (SIAM) in Qiskit, validated against EDRIXS / exact-diagonalization
+  reference energies, with a hardware execution path on IBM Quantum.
+license: MIT
+references:
+  - type: article
+    authors:
+      - family-names: Haverkort
+        given-names: M. W.
+      - family-names: Zwierzycki
+        given-names: M.
+      - family-names: Andersen
+        given-names: O. K.
+    title: "Multiplet ligand-field theory using Wannier orbitals"
+    journal: "Physical Review B"
+    year: 2012
+    volume: 85
+    start: 165113
+    doi: 10.1103/PhysRevB.85.165113
