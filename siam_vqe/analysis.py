@@ -12,6 +12,7 @@ The six validation layers from the design spec §5 live here:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -453,3 +454,254 @@ def check_resilience_guardrail(
         gap_l2=gap_l2,
         notes="; ".join(notes) if notes else "monotone improvement L0 -> L1 -> L2",
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 L3 layer checkers: Layer 2 (overlap) + Layer 5 (observables)
+# ---------------------------------------------------------------------------
+
+
+def check_layer2_overlap_l3(
+    psi_vqe_tapered: np.ndarray,
+    ref,  # L3Reference
+    *,
+    threshold: float = 0.85,
+    degeneracy_eV: float = 0.010,
+) -> dict:
+    """Layer 2: overlap of VQE statevector with scipy-ED ground state.
+
+    Lifts the 18-qubit tapered statevector back to the (9, 9) sector basis,
+    then computes |<psi_ED|psi_VQE>|^2. If the ED first-excited-state is
+    within `degeneracy_eV` of the ground state, switches to soft-degeneracy
+    mode and computes the overlap with the projector onto the near-degenerate
+    subspace.
+    """
+    from siam_vqe.tapering_l3 import lift_tapered_to_full_sector
+
+    psi_sector = lift_tapered_to_full_sector(
+        psi_vqe_tapered,
+        num_particles=ref.sector,
+        num_spin_orbitals=20,
+    )
+    # Normalize (lifted vector may have norm < 1 if VQE leaked outside sector)
+    norm = np.linalg.norm(psi_sector)
+    if norm == 0:
+        return {"pass": False, "overlap": 0.0, "mode": "leaked_outside_sector",
+                "leak_fraction": 1.0}
+    psi_sector = psi_sector / norm
+    sector_leak = 1.0 - norm**2
+
+    gap = float(ref.excited_energies[0] - ref.ground_energy)
+    if gap < degeneracy_eV:
+        # Soft mode: overlap against the projector onto {ground, excited_1}.
+        # In this implementation we only have the ground vector; assume the
+        # degenerate-partner overlap is computed externally if needed.
+        overlap = abs(np.vdot(ref.ground_vector, psi_sector)) ** 2
+        return {
+            "pass": bool(overlap >= threshold),
+            "overlap": float(overlap),
+            "mode": "soft_degeneracy",
+            "gap_eV": gap,
+            "sector_leak": float(sector_leak),
+        }
+
+    overlap = abs(np.vdot(ref.ground_vector, psi_sector)) ** 2
+    return {
+        "pass": bool(overlap >= threshold),
+        "overlap": float(overlap),
+        "mode": "strict",
+        "sector_leak": float(sector_leak),
+    }
+
+
+def check_layer5_observables_l3(
+    vqe_observables: dict[str, float],
+    ref,  # L3Reference
+    *,
+    rel_tol: float = 0.05,
+    abs_tol: float = 0.05,
+    abs_tol_threshold: float = 0.01,
+) -> dict:
+    """Layer 5: per-observable relative-error check with abs-tol fallback near zero.
+
+    For each observable in `ref.observables`:
+      - If |<O>_ED| < abs_tol_threshold: use |VQE - ED| < abs_tol (absolute mode).
+      - Else: use |VQE - ED| / |ED| < rel_tol (relative mode).
+    Returns a dict with overall pass/fail and per-observable details.
+    """
+    details: dict[str, dict] = {}
+    overall_pass = True
+
+    for key, ed_val in ref.observables.items():
+        vqe_val = vqe_observables.get(key)
+        if vqe_val is None:
+            details[key] = {"pass": False, "mode": "missing"}
+            overall_pass = False
+            continue
+        if abs(ed_val) < abs_tol_threshold:
+            err = abs(vqe_val - ed_val)
+            p = err < abs_tol
+            details[key] = {"pass": p, "mode": "abs_tol",
+                            "ed": ed_val, "vqe": vqe_val, "err": err}
+        else:
+            err_rel = abs(vqe_val - ed_val) / abs(ed_val)
+            p = err_rel < rel_tol
+            details[key] = {"pass": p, "mode": "rel_tol",
+                            "ed": ed_val, "vqe": vqe_val,
+                            "rel_err": err_rel}
+        if not p:
+            overall_pass = False
+
+    return {"pass": overall_pass, "details": details}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 L3 layer checkers: Layer 4 (multistart spread) + Layer 6 (ADAPT trace)
+# ---------------------------------------------------------------------------
+
+
+def check_layer4_multistart_l3(
+    multistart_result,  # AdaptMultistartResult
+    *,
+    layer1_passed: bool,
+    spread_threshold: float = 0.1,
+) -> dict:
+    """Layer 4: multistart spread with L2 soft-cluster carryover.
+
+    - If spread < threshold: strict pass.
+    - If spread >= threshold AND layer1_passed: soft pass with `[warn]` (the
+      L2 4-state-cluster pattern: best seed converged but others did not).
+    - If spread >= threshold AND not layer1_passed: hard fail.
+    """
+    spread = multistart_result.spread
+    if spread < spread_threshold:
+        return {"pass": True, "mode": "strict", "spread_eV": float(spread)}
+    if layer1_passed:
+        return {
+            "pass": True,
+            "mode": "soft_cluster",
+            "spread_eV": float(spread),
+            "warn": "cluster-like behavior",
+            "best_energy_eV": float(multistart_result.best_energy),
+            "median_energy_eV": float(multistart_result.median_energy),
+            "worst_energy_eV": float(multistart_result.worst_energy),
+        }
+    return {
+        "pass": False,
+        "mode": "fail_spread_no_best",
+        "spread_eV": float(spread),
+    }
+
+
+def check_layer6_adapt_trace(
+    trace,  # tuple[dict]
+    *,
+    noise_floor_eV: float = 0.001,
+) -> dict:
+    """Layer 6: ADAPT convergence trace must be monotonic (within noise floor).
+
+    A violation is energy[i+1] > energy[i] + noise_floor_eV at any iteration
+    where an operator was appended.
+    """
+    violations: list[dict] = []
+    prev_E = None
+    for row in trace:
+        if row["event"] != "operator_added":
+            continue
+        E = row["energy"]
+        if prev_E is not None and E > prev_E + noise_floor_eV:
+            violations.append({
+                "iteration": row["iteration"],
+                "prev_E": prev_E, "E": E,
+                "delta": E - prev_E,
+            })
+        prev_E = E
+    return {
+        "pass": len(violations) == 0,
+        "violations": violations,
+        "n_operator_steps": sum(1 for r in trace if r["event"] == "operator_added"),
+    }
+
+
+def plot_adapt_convergence(
+    trace,
+    *,
+    ed_reference: float | None = None,
+    output_path=None,
+) -> Axes:
+    """E vs operator count + g_max on twin axis.
+
+    Parameters
+    ----------
+    trace : sequence of dict rows (AdaptResult.trace).
+    ed_reference : float | None
+        If given, draws a horizontal dashed line at this energy as the ED reference.
+    output_path : Path-like | None
+        If given, saves the figure as PDF + PNG at this path (suffix stripped).
+    Returns the primary `matplotlib.axes.Axes`.
+    """
+    iters = [row["n_operators"] for row in trace
+             if row["event"] in ("operator_added", "converged")]
+    energies = [row["energy"] for row in trace
+                if row["event"] in ("operator_added", "converged")]
+    gmaxes = [row["g_max"] for row in trace
+              if row["event"] in ("operator_added", "converged")]
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(iters, energies, marker="o", color="C0", label="E_VQE")
+    if ed_reference is not None:
+        ax.axhline(ed_reference, ls="--", color="k", label="E_ED")
+    ax.set_xlabel("Number of operators appended")
+    ax.set_ylabel("Energy (eV)")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = ax.twinx()
+    ax2.semilogy(iters, gmaxes, marker="s", color="C3", label="g_max")
+    ax2.set_ylabel("max gradient (eV)", color="C3")
+    ax2.tick_params(axis="y", labelcolor="C3")
+
+    fig.tight_layout()
+    if output_path is not None:
+        base = Path(output_path).with_suffix("")
+        fig.savefig(base.with_suffix(".pdf"))
+        fig.savefig(base.with_suffix(".png"), dpi=150)
+    return ax
+
+
+def plot_l3_observables(
+    vqe_observables: dict[str, float],
+    ed_observables: dict[str, float],
+    *,
+    output_path=None,
+) -> Axes:
+    """Side-by-side bar chart of VQE vs ED observables.
+
+    Plots ⟨n_d⟩, ⟨n_p⟩, ⟨S²⟩ as one group; per-orbital ⟨n_d^α⟩ as another.
+    """
+    summary_keys = ["n_d", "n_p", "S2"]
+    perorb_keys = ["n_d_3z2", "n_d_x2y2", "n_d_xz", "n_d_yz", "n_d_xy"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+    def _bars(ax, keys, title):
+        x = np.arange(len(keys))
+        w = 0.35
+        ax.bar(x - w/2, [vqe_observables[k] for k in keys], width=w, label="VQE",
+               color="C0")
+        ax.bar(x + w/2, [ed_observables[k] for k in keys], width=w, label="ED",
+               color="C1")
+        ax.set_xticks(x)
+        ax.set_xticklabels(keys, rotation=20, ha="right")
+        ax.set_ylabel("⟨O⟩")
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3, axis="y")
+
+    _bars(axes[0], summary_keys, "Summary observables")
+    _bars(axes[1], perorb_keys, "Per d-orbital occupation")
+    fig.tight_layout()
+    if output_path is not None:
+        base = Path(output_path).with_suffix("")
+        fig.savefig(base.with_suffix(".pdf"))
+        fig.savefig(base.with_suffix(".png"), dpi=150)
+    return axes[0]

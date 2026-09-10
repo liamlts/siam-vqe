@@ -13,3 +13,4 @@ dist/
 .env
 *.npz
 !data/*.npz
+.DS_Store

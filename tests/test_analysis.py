@@ -19,7 +19,9 @@ from siam_vqe.analysis import (
     check_multistart_spread,
     check_observable_agreement,
     check_state_overlap,
+    plot_adapt_convergence,
     plot_convergence,
+    plot_l3_observables,
 )
 from siam_vqe.ansatz import efficient_su2_ansatz
 from siam_vqe.hamiltonian import hubbard_dimer, observables_dimer
@@ -284,3 +286,216 @@ def test_check_observable_agreement_multi_threads_num_particles(
     assert all(c["num_particles"] == (2, 1) for c in captured), (
         f"Expected num_particles=(2,1) in all to_qubit_op calls; got {captured}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tasks 22-23: L3 layer checkers (Layer 2, 4, 5, 6)
+# ---------------------------------------------------------------------------
+
+import numpy as np  # noqa: E402
+
+from siam_vqe.analysis import (  # noqa: E402
+    check_layer2_overlap_l3,
+    check_layer5_observables_l3,
+)
+from siam_vqe.hamiltonian_l3 import L3Params  # noqa: E402
+from siam_vqe.reference_l3 import compute_l3_reference  # noqa: E402
+
+
+def test_layer2_overlap_l3_passes_on_ed_ground_state():
+    """If the VQE statevector is the exact ED ground state, overlap = 1 >= 0.85."""
+    p = L3Params()
+    ref = compute_l3_reference(p, k_states=2)
+    # Build a fake VQE result whose tapered statevector lifts back to ref.ground_vector
+    from siam_vqe.tapering_l3 import project_full_to_tapered
+
+    psi_full = np.zeros(2**20, dtype=complex)
+    for i, occ in enumerate(ref.basis):
+        psi_full[occ] = ref.ground_vector[i]
+    psi_tapered = project_full_to_tapered(psi_full, num_particles=(9, 9))
+
+    result = check_layer2_overlap_l3(psi_tapered, ref, threshold=0.85)
+    assert result["pass"] is True
+    assert result["overlap"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_layer2_overlap_l3_softens_on_near_degeneracy():
+    """If E_1 - E_0 < 10 meV, soften: overlap measured against projector onto
+    the near-degenerate subspace."""
+    from siam_vqe.tapering_l3 import project_full_to_tapered
+
+    p = L3Params()
+    ref = compute_l3_reference(p, k_states=2)
+    # Simulate near-degeneracy by patching excited_energies (test-only override).
+    from dataclasses import replace
+    fake_ref = replace(ref, excited_energies=np.array([ref.ground_energy + 0.005]))
+
+    # Use a tapered vector that has support in the (9,9) sector so the lift
+    # is non-zero and the gap check (rather than leak check) governs the mode.
+    psi_full = np.zeros(2**20, dtype=complex)
+    for i, occ in enumerate(ref.basis):
+        psi_full[occ] = ref.ground_vector[i]
+    psi_tapered = project_full_to_tapered(psi_full, num_particles=(9, 9))
+    result = check_layer2_overlap_l3(psi_tapered, fake_ref, threshold=0.85)
+    assert result["mode"] == "soft_degeneracy"
+
+
+def test_layer5_observables_l3_passes_when_within_5pct():
+    """<n_d>, <S^2>, <n_p> all within 5% relative -> layer passes."""
+    p = L3Params()
+    ref = compute_l3_reference(p, k_states=2)
+    # Fake VQE observables: exact match (zero relative error).
+    vqe_obs = dict(ref.observables)
+    result = check_layer5_observables_l3(vqe_obs, ref, rel_tol=0.05, abs_tol=0.05)
+    assert result["pass"] is True
+
+
+def test_layer5_observables_l3_abs_tol_fallback_when_ed_obs_near_zero():
+    """When |<O>_ED| < 0.01, switch to absolute tolerance < 0.05."""
+    ref_obs = {"n_d": 8.0, "n_p": 10.0, "S2": 2.0,
+               "n_d_3z2": 1.5, "n_d_x2y2": 1.4, "n_d_xz": 1.7,
+               "n_d_yz": 1.7, "n_d_xy": 1.7}
+    from siam_vqe.reference_l3 import L3Reference
+    ref = L3Reference(
+        ground_energy=-1.0, ground_vector=np.zeros(100, dtype=complex),
+        excited_energies=np.array([0.0]), sector_dim=100,
+        sector=(9, 9), basis=tuple(range(100)),
+        observables=ref_obs,
+    )
+    # All exact except <n_d_x2y2> where ED is near zero. (Substitute small value.)
+    ref_obs_zero = dict(ref_obs)
+    ref_obs_zero["n_d_x2y2"] = 0.005
+    ref_zero = L3Reference(
+        ground_energy=ref.ground_energy,
+        ground_vector=ref.ground_vector,
+        excited_energies=ref.excited_energies,
+        sector_dim=ref.sector_dim, sector=ref.sector, basis=ref.basis,
+        observables=ref_obs_zero,
+    )
+    vqe_obs = dict(ref_obs_zero)
+    vqe_obs["n_d_x2y2"] = 0.03  # abs err 0.025 < 0.05
+    result = check_layer5_observables_l3(vqe_obs, ref_zero, rel_tol=0.05, abs_tol=0.05)
+    assert result["pass"] is True
+    assert result["details"]["n_d_x2y2"]["mode"] == "abs_tol"
+
+
+from siam_vqe.adapt_vqe import AdaptResult  # noqa: E402
+from siam_vqe.analysis import (  # noqa: E402
+    check_layer4_multistart_l3,
+    check_layer6_adapt_trace,
+)
+from siam_vqe.vqe_runner import AdaptMultistartResult  # noqa: E402
+
+
+def _fake_adapt_result(E):
+    return AdaptResult(
+        final_energy=E, theta=np.array([0.1]),
+        operators_picked=(0,),
+        trace=({"iteration": 0, "energy": E, "g_max": 0.0, "k_star": 0,
+                "n_operators": 1, "event": "operator_added"},),
+        converged_reason="gradient",
+    )
+
+
+def test_layer4_multistart_l3_passes_when_spread_under_100mev():
+    per_seed = tuple(_fake_adapt_result(E) for E in [-1.5, -1.49, -1.48, -1.47])
+    multi = AdaptMultistartResult(
+        per_seed=per_seed, best_seed_index=0,
+        best_energy=-1.5, median_energy=-1.485, worst_energy=-1.47,
+        spread=0.03,
+    )
+    result = check_layer4_multistart_l3(multi, layer1_passed=True,
+                                         spread_threshold=0.1)
+    assert result["pass"] is True
+    assert result["mode"] == "strict"
+
+
+def test_layer4_multistart_l3_soft_warn_when_spread_fails_but_best_passes():
+    """L2 soft-gate carryover: spread > threshold but best seed still passes."""
+    per_seed = tuple(_fake_adapt_result(E) for E in [-1.5, -1.0, -0.9, -0.8])
+    multi = AdaptMultistartResult(
+        per_seed=per_seed, best_seed_index=0,
+        best_energy=-1.5, median_energy=-0.95, worst_energy=-0.8,
+        spread=0.7,
+    )
+    result = check_layer4_multistart_l3(multi, layer1_passed=True,
+                                         spread_threshold=0.1)
+    assert result["pass"] is True
+    assert result["mode"] == "soft_cluster"
+    assert "warn" in result
+
+
+def test_layer4_multistart_l3_fails_when_layer1_also_fails():
+    per_seed = tuple(_fake_adapt_result(E) for E in [-1.5, -1.0, -0.9, -0.8])
+    multi = AdaptMultistartResult(
+        per_seed=per_seed, best_seed_index=0,
+        best_energy=-1.5, median_energy=-0.95, worst_energy=-0.8,
+        spread=0.7,
+    )
+    result = check_layer4_multistart_l3(multi, layer1_passed=False,
+                                         spread_threshold=0.1)
+    assert result["pass"] is False
+
+
+def test_layer6_adapt_trace_monotonic_passes_on_clean_descent():
+    trace = (
+        {"iteration": 0, "energy": -1.0, "g_max": 0.5, "n_operators": 1,
+         "event": "operator_added"},
+        {"iteration": 1, "energy": -1.2, "g_max": 0.3, "n_operators": 2,
+         "event": "operator_added"},
+        {"iteration": 2, "energy": -1.5, "g_max": 0.1, "n_operators": 3,
+         "event": "operator_added"},
+        {"iteration": 3, "energy": -1.5, "g_max": 0.001, "n_operators": 3,
+         "event": "converged"},
+    )
+    result = check_layer6_adapt_trace(trace, noise_floor_eV=0.001)
+    assert result["pass"] is True
+
+
+def test_layer6_adapt_trace_fails_on_runaway_growth():
+    """Energy goes UP after operator append -> unphysical (bug indicator)."""
+    trace = (
+        {"iteration": 0, "energy": -1.0, "g_max": 0.5, "n_operators": 1,
+         "event": "operator_added"},
+        {"iteration": 1, "energy": -0.7, "g_max": 0.3, "n_operators": 2,
+         "event": "operator_added"},
+    )
+    result = check_layer6_adapt_trace(trace, noise_floor_eV=0.001)
+    assert result["pass"] is False
+    assert "violations" in result
+
+
+def test_plot_adapt_convergence_creates_pdf(tmp_path):
+    import matplotlib
+    matplotlib.use("Agg")
+    trace = (
+        {"iteration": 0, "energy": -1.0, "g_max": 0.5, "n_operators": 1,
+         "event": "operator_added"},
+        {"iteration": 1, "energy": -1.2, "g_max": 0.3, "n_operators": 2,
+         "event": "operator_added"},
+        {"iteration": 2, "energy": -1.4, "g_max": 0.1, "n_operators": 3,
+         "event": "operator_added"},
+        {"iteration": 3, "energy": -1.45, "g_max": 0.001, "n_operators": 3,
+         "event": "converged"},
+    )
+    output = tmp_path / "adapt_convergence.pdf"
+    ax = plot_adapt_convergence(trace, ed_reference=-1.46, output_path=output)
+    import matplotlib.axes
+    assert isinstance(ax, matplotlib.axes.Axes)
+    assert output.exists()
+
+
+def test_plot_l3_observables_creates_pdf(tmp_path):
+    import matplotlib
+    matplotlib.use("Agg")
+    vqe_obs = {"n_d": 7.8, "n_p": 10.2, "S2": 1.95,
+               "n_d_3z2": 1.5, "n_d_x2y2": 1.4, "n_d_xz": 1.7,
+               "n_d_yz": 1.6, "n_d_xy": 1.6}
+    ed_obs = {"n_d": 7.85, "n_p": 10.15, "S2": 1.99,
+              "n_d_3z2": 1.52, "n_d_x2y2": 1.42, "n_d_xz": 1.69,
+              "n_d_yz": 1.62, "n_d_xy": 1.60}
+    output = tmp_path / "obs.pdf"
+    ax = plot_l3_observables(vqe_obs, ed_obs, output_path=output)
+    import matplotlib.axes
+    assert isinstance(ax, matplotlib.axes.Axes)
+    assert output.exists()

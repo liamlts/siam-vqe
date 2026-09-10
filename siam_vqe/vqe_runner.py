@@ -8,7 +8,7 @@ not handle noise — those live in their own modules.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -17,6 +17,8 @@ from qiskit import QuantumCircuit
 from qiskit.primitives import StatevectorEstimator
 from qiskit.quantum_info import SparsePauliOp
 from qiskit_algorithms.optimizers import COBYLA, SLSQP, SPSA, Optimizer
+
+from siam_vqe.adapt_vqe import AdaptConfig, AdaptResult, run_adapt_vqe
 
 OptimizerName = Literal["COBYLA", "SLSQP", "SPSA"]
 
@@ -185,4 +187,57 @@ def run_vqe_multistart(
         runs=sorted_results,
         best=best,
         spread_best_to_median=spread_best_to_median,
+    )
+
+
+@dataclass(frozen=True)
+class AdaptMultistartResult:
+    """Aggregated multistart ADAPT-VQE result.
+
+    Attributes
+    ----------
+    per_seed : tuple of AdaptResult, one per seed.
+    best_seed_index : index of the seed with the lowest final energy.
+    best_energy / median_energy / worst_energy : float
+        Aggregate statistics across seeds.
+    spread : float
+        worst_energy - best_energy (Layer 4 quantity).
+    """
+
+    per_seed: tuple[AdaptResult, ...]
+    best_seed_index: int
+    best_energy: float
+    median_energy: float
+    worst_energy: float
+    spread: float
+
+
+def run_adapt_multistart(
+    H_pauli: SparsePauliOp,
+    pool_paulis: Sequence[SparsePauliOp],
+    psi_seeds: Sequence[np.ndarray],
+    config: AdaptConfig,
+) -> AdaptMultistartResult:
+    """Run ADAPT-VQE from each seed Slater determinant.
+
+    Each seed is a tapered statevector (e.g., from
+    `hf_state_to_tapered_statevector`); ADAPT runs deterministically from each.
+    The outer-loop randomness enters only through the choice of HF determinant,
+    NOT through random theta initialization (each theta_new = 0.0 by ADAPT
+    convention).
+    """
+    per_seed: list[AdaptResult] = []
+    for psi_0 in psi_seeds:
+        result = run_adapt_vqe(H_pauli, pool_paulis, psi_0, config)
+        per_seed.append(result)
+
+    energies = np.array([r.final_energy for r in per_seed])
+    best_idx = int(np.argmin(energies))
+    return AdaptMultistartResult(
+        per_seed=tuple(per_seed),
+        best_seed_index=best_idx,
+        best_energy=float(np.min(energies)),
+        median_energy=float(np.median(energies)),
+        worst_energy=float(np.max(energies)),
+        spread=float(np.max(energies) - np.min(energies)),
     )
