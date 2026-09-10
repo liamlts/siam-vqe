@@ -132,9 +132,9 @@ upstream's to resolve.
 Run against qiskit 2.5.2 / aer 0.17.2 / nature 0.8.0 / algorithms 0.4.0 /
 ibm-runtime 0.49.0 / mthree 3.0.0 in a clean virtual environment.
 
-CI numbers below are from the same GitHub Actions runner type, so the
-comparison is like-for-like: `main` on Python 3.11 / qiskit 1.4.5 versus this
-branch on Python 3.12.14 / qiskit 2.5.2.
+CI numbers below compare `main` on Python 3.11 / qiskit 1.4.5 against this
+branch on Python 3.12.14 / qiskit 2.5.2. The pass/fail and warning counts are
+deterministic and comparable; wall time is not — see the runtime note below.
 
 | Gate | Qiskit 1.4.5 (baseline) | Qiskit 2.5.2 |
 |---|---|---|
@@ -144,27 +144,34 @@ branch on Python 3.12.14 / qiskit 2.5.2.
 | `mypy siam_vqe` | clean (target 3.11) | clean (target 3.12), 20 files |
 | Deprecations owned by `siam_vqe` | 1 (`EfficientSU2`) | **0** |
 
-The warning drop is real and reproducible: both Qiskit 2.5.2 CI runs report
-exactly 10, against 71 on the 1.4.5 baseline. Test counts are identical, so
-nothing was traded away for it.
+The warning drop is real and reproducible: all three Qiskit 2.5.2 CI runs
+report exactly 10, against 71 on the 1.4.5 baseline. Test counts are identical,
+so nothing was traded away for it.
 
 ### On runtime: no conclusion
 
 An earlier revision of this log claimed a 43% speedup. **That claim was wrong
-and is retracted.** It compared one 2.x run against one 1.x run. Two CI runs of
-identical code on 2.5.2 — differing only in a markdown file — came in at
+and is retracted.** It compared one 2.x run against one 1.x run. Three CI runs
+of functionally identical code on 2.5.2 — differing only in markdown — came in
+at
 
-| Run | Pytest wall time |
-|---|---|
-| 2.5.2, run 1 | 633.60 s |
-| 2.5.2, run 2 | 1045.09 s |
-| 1.4.5 baseline (n=1) | 1112.93 s |
+| Run | Pytest wall time | Warnings |
+|---|---|---|
+| 2.5.2, run 1 | 633.60 s | 10 |
+| 2.5.2, run 2 | 1045.09 s | 10 |
+| 2.5.2, run 3 | 986.89 s | 10 |
+| 1.4.5 baseline (n=1) | 1112.93 s | 71 |
 
-A 65% spread between two identical runs swamps the gap to the baseline. These
-are shared GitHub runners and the suite is dominated by a handful of
-simulation-heavy `test_noise` / `test_hadamard_test` cases, so wall time is
-noise-dominated at n=1. The honest statement is that **2.x is not measurably
-slower**; anything stronger needs repeated runs on a fixed machine.
+The 2.x runs span 634–1045 s, a 65% spread on identical code. That swamps the
+gap to the single baseline measurement. These are shared GitHub runners and the
+suite is dominated by a handful of simulation-heavy `test_noise` /
+`test_hadamard_test` cases, so wall time is noise-dominated here. The honest
+statement is that **2.x is not measurably slower**; anything stronger needs
+repeated runs on fixed hardware, with the baseline measured more than once too.
+
+Note the contrast in the same table: the warning count is *exactly* 10 in all
+three runs. That is what a real, deterministic improvement looks like, and it
+is why that claim survived while the timing one did not.
 
 The test result is identical to the baseline — no test was skipped, xfailed, or
 rewritten to accommodate 2.x. The single `x` is the pre-existing xfail.
