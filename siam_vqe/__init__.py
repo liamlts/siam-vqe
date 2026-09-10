@@ -1,5 +1,18 @@
 """VQE for single-impurity Anderson models on Qiskit."""
 
+from siam_vqe.adapt_vqe import (
+    AdaptConfig,
+    AdaptResult,
+    HFState,
+    apply_exp_iT,
+    build_l3_multistart_seeds,
+    build_uccsd_pool,
+    hartree_fock_initial_state,
+    hf_state_to_tapered_statevector,
+    pool_to_tapered_paulis,
+    run_adapt_vqe,
+    screen_gradients,
+)
 from siam_vqe.analysis import (
     EnergyMatchReport,
     ExpressivityReport,
@@ -10,29 +23,74 @@ from siam_vqe.analysis import (
     ResilienceGuardrailReport,
     check_ansatz_expressivity,
     check_energy_match,
+    check_layer2_overlap_l3,
+    check_layer4_multistart_l3,
+    check_layer5_observables_l3,
+    check_layer6_adapt_trace,
     check_multistart_spread,
     check_observable_agreement,
     check_observable_agreement_multi,
     check_resilience_guardrail,
     check_state_overlap,
     compare_energies,
+    plot_adapt_convergence,
     plot_convergence,
+    plot_l3_observables,
 )
 from siam_vqe.ansatz import efficient_su2_ansatz, uccsd_ansatz
 from siam_vqe.hamiltonian import hubbard_dimer, nio_l1_anderson, observables_dimer, observables_l1
+from siam_vqe.hamiltonian_l3 import (
+    L3Params,
+    atomic_multiplet_energies,
+    nio_l3_hamiltonian,
+    nio_l3_impurity_only,
+    racah_BC,
+    slater_to_u_tensor,
+)
 from siam_vqe.hardware import make_runtime_estimator, pick_backend, transpile_for_backend
 from siam_vqe.mappings import to_qubit_op
 from siam_vqe.noise import make_noisy_estimator
+from siam_vqe.observables_l3 import (
+    compute_reference_observables,
+    evaluate_observable_on_sector,
+    make_l3_observables,
+)
 from siam_vqe.reference_ed import EDResult, exact_diag
 from siam_vqe.reference_edrixs import compute_l1_levels
-from siam_vqe.vqe_runner import MultistartResult, VQEResult, run_vqe, run_vqe_multistart
+from siam_vqe.reference_l3 import (
+    L3Reference,
+    compute_l3_reference,
+    inspect_multiplets,
+    load_l3_reference,
+    save_l3_reference,
+)
+from siam_vqe.tapering_l3 import (
+    lift_tapered_to_full_sector,
+    num_tapered_qubits,
+    project_full_to_tapered,
+    tapered_l3_pauli,
+)
+from siam_vqe.vqe_runner import (
+    AdaptMultistartResult,
+    MultistartResult,
+    VQEResult,
+    run_adapt_multistart,
+    run_vqe,
+    run_vqe_multistart,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
+    "AdaptConfig",
+    "AdaptMultistartResult",
+    "AdaptResult",
     "EDResult",
     "EnergyMatchReport",
     "ExpressivityReport",
+    "HFState",
+    "L3Params",
+    "L3Reference",
     "MultiObservableReport",
     "MultiStartReport",
     "MultistartResult",
@@ -41,8 +99,16 @@ __all__ = [
     "ResilienceGuardrailReport",
     "VQEResult",
     "__version__",
+    "apply_exp_iT",
+    "atomic_multiplet_energies",
+    "build_l3_multistart_seeds",
+    "build_uccsd_pool",
     "check_ansatz_expressivity",
     "check_energy_match",
+    "check_layer2_overlap_l3",
+    "check_layer4_multistart_l3",
+    "check_layer5_observables_l3",
+    "check_layer6_adapt_trace",
     "check_multistart_spread",
     "check_observable_agreement",
     "check_observable_agreement_multi",
@@ -50,18 +116,41 @@ __all__ = [
     "check_state_overlap",
     "compare_energies",
     "compute_l1_levels",
+    "compute_l3_reference",
+    "compute_reference_observables",
     "efficient_su2_ansatz",
+    "evaluate_observable_on_sector",
     "exact_diag",
+    "hartree_fock_initial_state",
+    "hf_state_to_tapered_statevector",
     "hubbard_dimer",
+    "inspect_multiplets",
+    "lift_tapered_to_full_sector",
+    "load_l3_reference",
+    "make_l3_observables",
     "make_noisy_estimator",
     "make_runtime_estimator",
     "nio_l1_anderson",
+    "nio_l3_hamiltonian",
+    "nio_l3_impurity_only",
+    "num_tapered_qubits",
     "observables_dimer",
     "observables_l1",
     "pick_backend",
+    "plot_adapt_convergence",
     "plot_convergence",
+    "plot_l3_observables",
+    "pool_to_tapered_paulis",
+    "project_full_to_tapered",
+    "racah_BC",
+    "run_adapt_multistart",
+    "run_adapt_vqe",
     "run_vqe",
     "run_vqe_multistart",
+    "save_l3_reference",
+    "screen_gradients",
+    "slater_to_u_tensor",
+    "tapered_l3_pauli",
     "to_qubit_op",
     "transpile_for_backend",
     "uccsd_ansatz",

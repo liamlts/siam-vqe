@@ -1,0 +1,9 @@
+[run_l3_adapt] Mode: smoke
+[run_l3_adapt] Params: F2=9.787, F4=6.078, V_eg=2.06, V_t2g=1.21
+[run_l3_adapt] Loaded reference NPZ: E_0 = 267.476996 eV
+[run_l3_adapt] Tapered H built (18 qubits, 218 Pauli terms) in 1.3 s
+[run_l3_adapt] Pool size = 99 operators (virtuals = [1, 10])
+[run_l3_adapt] Multistart done in 1513.6 s
+[run_l3_adapt] best=267.476996, median=267.476996, worst=267.476996, spread=0.000000 eV
+[run_l3_adapt] Phase 4 pass = True
+[run_l3_adapt] Wrote notebooks/04_L3_vqe_result_smoke_postfix.json
