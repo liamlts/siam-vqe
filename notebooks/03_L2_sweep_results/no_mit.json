@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "energy": -80.04290618729999,
+  "std": 1.76983466555698,
+  "metadata": {
+    "spec": "no_mit",
+    "path": "no_mit"
+  },
+  "walltime_s": 5.126115648017731,
+  "spec": {
+    "name": "no_mit",
+    "m3": false,
+    "zne": false,
+    "zne_extrapolator": null,
+    "zne_noise_factors": null,
+    "shots": 2048
+  }
+}

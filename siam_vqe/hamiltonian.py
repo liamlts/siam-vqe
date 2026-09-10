@@ -161,6 +161,89 @@ def nio_l1_anderson(U: float, V: float, eps_d: float, eps_p: float) -> Fermionic
     return FermionicOp(labels, num_spin_orbitals=4)
 
 
+def nio_l2_kanamori(
+    U: float,
+    U_prime: float,
+    J_H: float,
+    V: float,
+    eps_d: float,
+    eps_p: float,
+) -> FermionicOp:
+    """L2 NiO e_g² Anderson impurity model on 8 spin-orbitals.
+
+    Mode ordering (per Phase 3 spec §3.1, extends Phase 2's all-up-then-all-down):
+        0 = eg_a ↑ (impurity dz²-r², up)
+        1 = eg_b ↑ (impurity dx²-y², up)
+        2 = p_eg(a) ↑ (ligand a, up)
+        3 = p_eg(b) ↑ (ligand b, up)
+        4 = eg_a ↓
+        5 = eg_b ↓
+        6 = p_eg(a) ↓
+        7 = p_eg(b) ↓
+
+    H = ε_d Σ_{α∈{a,b}, σ} n_{d_α σ}
+        + ε_p Σ_{α∈{a,b}, σ} n_{p_α σ}
+        + V   Σ_{α∈{a,b}, σ} (d†_{α σ} p_{α σ} + h.c.)
+        + U   Σ_α n_{d_α↑} n_{d_α↓}
+        + U'  Σ_{α≠β} n_{d_α↑} n_{d_β↓}
+        + (U' - J_H) Σ_{α<β, σ} n_{d_α σ} n_{d_β σ}
+        − J_H Σ_{α≠β} d†_{α↑} d_{α↓} d†_{β↓} d_{β↑}    (spin-flip)
+        + J_H Σ_{α≠β} d†_{α↑} d†_{α↓} d_{β↓} d_{β↑}    (pair-hop)
+
+    Parameters
+    ----------
+    U : intra-orbital impurity Coulomb (same orbital, opposite spin).
+    U_prime : inter-orbital impurity Coulomb (different orbitals, opposite spin).
+    J_H : Hund's exchange.
+    V : impurity-bath hybridization (diagonal per symmetry channel, +V sign).
+    eps_d : impurity on-site energy.
+    eps_p : bath on-site energy.
+
+    Returns
+    -------
+    FermionicOp on 8 spin-orbitals.
+    """
+    labels: dict[str, float] = {}
+
+    # On-site impurity (modes 0, 1, 4, 5)
+    for mode in (0, 1, 4, 5):
+        labels[f"+_{mode} -_{mode}"] = eps_d
+    # On-site bath (modes 2, 3, 6, 7)
+    for mode in (2, 3, 6, 7):
+        labels[f"+_{mode} -_{mode}"] = eps_p
+
+    # Diagonal hybridization per symmetry channel (a: 0↔2, 4↔6; b: 1↔3, 5↔7)
+    for d_mode, p_mode in [(0, 2), (1, 3), (4, 6), (5, 7)]:
+        labels[f"+_{d_mode} -_{p_mode}"] = V
+        labels[f"+_{p_mode} -_{d_mode}"] = V
+
+    # Intra-orbital U: (eg_a↑ eg_a↓) and (eg_b↑ eg_b↓)
+    for d_up, d_dn in [(0, 4), (1, 5)]:
+        labels[f"+_{d_up} -_{d_up} +_{d_dn} -_{d_dn}"] = U
+
+    # Inter-orbital U', opposite spin: (eg_a↑ eg_b↓) and (eg_b↑ eg_a↓)
+    for d_up, d_dn in [(0, 5), (1, 4)]:
+        labels[f"+_{d_up} -_{d_up} +_{d_dn} -_{d_dn}"] = U_prime
+
+    # Inter-orbital (U' - J), same spin: (eg_a↑ eg_b↑) and (eg_a↓ eg_b↓)
+    for d_a, d_b in [(0, 1), (4, 5)]:
+        labels[f"+_{d_a} -_{d_a} +_{d_b} -_{d_b}"] = U_prime - J_H
+
+    # Spin-flip: -J Σ_{α≠β} d†_{α↑} d_{α↓} d†_{β↓} d_{β↑}
+    # α=a, β=b: -J  d†_{0} d_{4} d†_{5} d_{1}
+    # α=b, β=a: -J  d†_{1} d_{5} d†_{4} d_{0}
+    labels["+_0 -_4 +_5 -_1"] = -J_H
+    labels["+_1 -_5 +_4 -_0"] = -J_H
+
+    # Pair-hop: +J Σ_{α≠β} d†_{α↑} d†_{α↓} d_{β↓} d_{β↑}
+    # α=a, β=b: +J  d†_{0} d†_{4} d_{5} d_{1}
+    # α=b, β=a: +J  d†_{1} d†_{5} d_{4} d_{0}
+    labels["+_0 +_4 -_5 -_1"] = J_H
+    labels["+_1 +_5 -_4 -_0"] = J_H
+
+    return FermionicOp(labels, num_spin_orbitals=8)
+
+
 def observables_l1() -> dict[str, FermionicOp]:
     """Observables for the L1 NiO SIAM (4 spin-orbitals).
 
@@ -197,4 +280,67 @@ def observables_l1() -> dict[str, FermionicOp]:
         "n_p_total": n_p_total,
         "S2_d": s2_d,
         "double_occ_d": double_occ_d,
+    }
+
+
+def observables_l2() -> dict[str, FermionicOp]:
+    """Observables for the L2 NiO e_g² SIAM (8 spin-orbitals).
+
+    Mode ordering matches `nio_l2_kanamori`:
+        0=eg_a↑, 1=eg_b↑, 2=p_a↑, 3=p_b↑, 4=eg_a↓, 5=eg_b↓, 6=p_a↓, 7=p_b↓.
+
+    Returns dict with keys:
+        n_d_total          — Σ_{α∈{a,b}, σ} n_{d_α σ}
+        n_p_total          — Σ_{α∈{a,b}, σ} n_{p_α σ}
+        S2_d               — impurity total spin squared (sum across e_g)
+        double_occ_d       — Σ_α n_{d_α↑} n_{d_α↓}
+        n_d_a_minus_n_d_b  — n_{eg_a, total} − n_{eg_b, total} (orbital polarization)
+    """
+    n_d_modes = [0, 1, 4, 5]
+    n_p_modes = [2, 3, 6, 7]
+
+    n_d_total = FermionicOp(
+        {f"+_{m} -_{m}": 1.0 for m in n_d_modes}, num_spin_orbitals=8
+    )
+    n_p_total = FermionicOp(
+        {f"+_{m} -_{m}": 1.0 for m in n_p_modes}, num_spin_orbitals=8
+    )
+
+    s_plus_d = FermionicOp(
+        {"+_0 -_4": 1.0, "+_1 -_5": 1.0}, num_spin_orbitals=8
+    )
+    s_minus_d = FermionicOp(
+        {"+_4 -_0": 1.0, "+_5 -_1": 1.0}, num_spin_orbitals=8
+    )
+    sz_d = FermionicOp(
+        {
+            "+_0 -_0": 0.5, "+_1 -_1": 0.5,
+            "+_4 -_4": -0.5, "+_5 -_5": -0.5,
+        },
+        num_spin_orbitals=8,
+    )
+    s2_d = (sz_d @ sz_d + 0.5 * (s_plus_d @ s_minus_d + s_minus_d @ s_plus_d)).simplify()
+
+    double_occ_d = FermionicOp(
+        {
+            "+_0 -_0 +_4 -_4": 1.0,
+            "+_1 -_1 +_5 -_5": 1.0,
+        },
+        num_spin_orbitals=8,
+    )
+
+    n_d_a_minus_n_d_b = FermionicOp(
+        {
+            "+_0 -_0": 1.0, "+_4 -_4": 1.0,
+            "+_1 -_1": -1.0, "+_5 -_5": -1.0,
+        },
+        num_spin_orbitals=8,
+    )
+
+    return {
+        "n_d_total": n_d_total.simplify(),
+        "n_p_total": n_p_total.simplify(),
+        "S2_d": s2_d,
+        "double_occ_d": double_occ_d,
+        "n_d_a_minus_n_d_b": n_d_a_minus_n_d_b.simplify(),
     }

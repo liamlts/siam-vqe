@@ -1,0 +1,26 @@
+{
+  "phase": 3,
+  "level": "L2",
+  "shots_per_config": 8192,
+  "ed_energy": -95.3999985731477,
+  "noiseless_vqe_energy": -95.3999658761328,
+  "layer_6_passed": true,
+  "layer_6_gap_m3": 14.333500505636067,
+  "layer_6_gap_m3_zne": 2.938496498432201,
+  "layer_6_notes": "M3+ZNE improves over M3 alone",
+  "layer_7_passed": true,
+  "best_mitigation_config": "m3_zne_poly3_135",
+  "best_mitigation_ratio": 0.07545083527122066,
+  "layer_7_per_config_ratio": {
+    "m3_only": 0.9499563836152257,
+    "zne_lin_135": 0.6461032893613332,
+    "m3_zne_lin_135": 0.6339239396335445,
+    "m3_zne_exp_135": 0.19474960117516552,
+    "m3_zne_poly3_135": 0.07545083527122066,
+    "m3_zne_lin_123": 0.33725470932738,
+    "m3_zne_lin_12345": 0.5903814851439848
+  },
+  "sweep_dir": "notebooks/03_L2_sweep_results_full",
+  "wall_started": "2026-05-26T00:07:36",
+  "wall_ended": "2026-05-26T00:47:45"
+}

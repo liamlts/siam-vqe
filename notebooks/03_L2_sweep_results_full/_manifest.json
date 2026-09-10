@@ -1,0 +1,273 @@
+{
+  "backend": "FakeMarrakesh",
+  "shots_per_config": 8192,
+  "configs": {
+    "no_mit": {
+      "status": "ok",
+      "energy": -80.31141055704593,
+      "std": 0.8871102084791451,
+      "metadata": {
+        "spec": "no_mit",
+        "path": "no_mit"
+      },
+      "walltime_s": 4.926750551967416,
+      "spec": {
+        "name": "no_mit",
+        "m3": false,
+        "zne": false,
+        "zne_extrapolator": null,
+        "zne_noise_factors": null,
+        "shots": 8192
+      }
+    },
+    "m3_only": {
+      "status": "ok",
+      "energy": -81.06649806751163,
+      "std": 0.617334097778374,
+      "metadata": {
+        "spec": "m3_only",
+        "path": "manual_m3",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 99.92776532302378,
+      "spec": {
+        "name": "m3_only",
+        "m3": true,
+        "zne": false,
+        "zne_extrapolator": null,
+        "zne_noise_factors": null,
+        "shots": 8192
+      }
+    },
+    "zne_lin_135": {
+      "status": "ok",
+      "energy": -85.65121222412635,
+      "std": 6.079298862695432,
+      "metadata": {
+        "spec": "zne_lin_135",
+        "path": "manual_zne",
+        "zne_raw_values": [
+          -80.646433713255,
+          -63.94548598009523,
+          -55.274207100635905
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear"
+      },
+      "walltime_s": 26.57638639601646,
+      "spec": {
+        "name": "zne_lin_135",
+        "m3": false,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 8192
+      }
+    },
+    "m3_zne_lin_135": {
+      "status": "ok",
+      "energy": -85.83498141447298,
+      "std": 5.9657685130030496,
+      "metadata": {
+        "spec": "m3_zne_lin_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -81.19946019800598,
+          -64.18636512441228,
+          -56.4637332196102
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 441.20118425396504,
+      "spec": {
+        "name": "m3_zne_lin_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 8192
+      }
+    },
+    "m3_zne_exp_135": {
+      "status": "ok",
+      "energy": -92.4615020747155,
+      "std": 6.121735508282125,
+      "metadata": {
+        "spec": "m3_zne_exp_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -80.77860327735847,
+          -64.71460851716367,
+          -55.07226657980099
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "exponential",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 566.2011415050365,
+      "spec": {
+        "name": "m3_zne_exp_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "exponential",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 8192
+      }
+    },
+    "m3_zne_poly3_135": {
+      "status": "ok",
+      "energy": -94.26155200426949,
+      "std": 6.131317649227064,
+      "metadata": {
+        "spec": "m3_zne_poly3_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -81.6874494131041,
+          -64.01778677711575,
+          -56.31951420291739
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "polynomial_degree_3",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 392.5606512069935,
+      "spec": {
+        "name": "m3_zne_poly3_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "polynomial_degree_3",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 8192
+      }
+    },
+    "m3_zne_lin_123": {
+      "status": "ok",
+      "energy": -90.31130120761671,
+      "std": 4.034059084794031,
+      "metadata": {
+        "spec": "m3_zne_lin_123",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -81.0226337349314,
+          -75.18419572989968,
+          -64.17041352338754
+        ],
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 359.1472365920199,
+      "spec": {
+        "name": "m3_zne_lin_123",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "shots": 8192
+      }
+    },
+    "m3_zne_lin_12345": {
+      "status": "ok",
+      "energy": -86.4919755714758,
+      "std": 4.071597794207222,
+      "metadata": {
+        "spec": "m3_zne_lin_12345",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -80.48089437990802,
+          -75.12865613814634,
+          -64.42521465773633,
+          -61.88968270177895,
+          -55.38285665723286
+        ],
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 518.5154286219622,
+      "spec": {
+        "name": "m3_zne_lin_12345",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "shots": 8192
+      }
+    }
+  },
+  "ed_energy": -95.3999985731477,
+  "noiseless_vqe_energy": -95.3999658761328,
+  "x_star": [
+    -0.0011974438500694296,
+    0.06101029214806243,
+    -0.019599216563421434,
+    -0.003983130980715902,
+    0.06090185887998029,
+    -0.06515399928343993,
+    -0.0003014136197145696,
+    3.825122400524824e-06,
+    -0.004858998605575708,
+    2.8876863131674128e-05,
+    -0.00041045569555587874,
+    -1.1970750499369745e-05,
+    -0.004856541946891141,
+    -2.8308396464726826e-06,
+    -0.07928824518085442
+  ],
+  "wall_started": "2026-05-26T00:07:36",
+  "wall_ended": "2026-05-26T00:47:45"
+}

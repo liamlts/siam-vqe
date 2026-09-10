@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Liam Schmidt" }]
 license = { text = "MIT" }
 dependencies = [
+    "mthree>=2.6",
     "qiskit~=1.2",
     "qiskit-aer>=0.15",
     "qiskit-nature~=0.7",
@@ -45,20 +46,20 @@ ignore = ["E501"]  # let formatter handle line length
 
 [tool.ruff.lint.per-file-ignores]
 "siam_vqe/__init__.py" = ["F401"]
-"siam_vqe/hamiltonian.py" = ["N803", "RUF002"]
+"siam_vqe/adapt_vqe.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
+"siam_vqe/analysis.py" = ["N803", "N806", "SIM300"]
+"siam_vqe/core_hole.py" = ["N806", "RUF002"]
+"siam_vqe/dipole.py" = ["N806", "RUF002"]
+"siam_vqe/hamiltonian.py" = ["N803", "RUF002", "RUF003"]
 "siam_vqe/hamiltonian_l3.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
 "siam_vqe/observables_l3.py" = ["N802", "N806", "RUF002", "RUF003"]
+"siam_vqe/qeom.py" = ["N803", "N806", "N815", "RUF002", "RUF003"]
 "siam_vqe/reference_edrixs.py" = ["N803"]
 "siam_vqe/reference_l3.py" = ["N806"]
 "siam_vqe/tapering_l3.py" = ["RUF002"]
-"siam_vqe/adapt_vqe.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
-"siam_vqe/core_hole.py" = ["N806", "RUF002"]
-"siam_vqe/dipole.py" = ["N806", "RUF002"]
-"siam_vqe/qeom.py" = ["N803", "N806", "N815", "RUF002", "RUF003"]
-"siam_vqe/xas.py" = ["N803", "N806", "N815", "RUF002"]
 "siam_vqe/vqe_runner.py" = ["N803"]
-"siam_vqe/analysis.py" = ["N803", "N806", "SIM300"]
-"tests/test_hamiltonian.py" = ["N803"]
+"siam_vqe/xas.py" = ["N803", "N806", "N815", "RUF002"]
+"tests/test_hamiltonian.py" = ["N802", "N803", "N806", "RUF002"]
 "tests/test_hamiltonian_l3.py" = ["N802", "N803", "N806", "SIM300", "RUF001", "RUF002", "RUF003"]
 "tests/test_observables.py" = ["N802", "N803", "N806"]
 "tests/test_observables_l3.py" = ["N802", "RUF002"]
@@ -89,7 +90,7 @@ warn_unreachable = true
 files = ["siam_vqe"]
 
 [[tool.mypy.overrides]]
-module = ["qiskit.*", "qiskit_nature.*", "qiskit_algorithms.*", "qiskit_aer.*", "qiskit_ibm_runtime.*", "scipy.*", "matplotlib.*"]
+module = ["mthree.*", "qiskit.*", "qiskit_nature.*", "qiskit_algorithms.*", "qiskit_aer.*", "qiskit_ibm_runtime.*", "scipy.*", "matplotlib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

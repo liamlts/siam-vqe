@@ -1,0 +1,19 @@
+{
+  "status": "ok",
+  "energy": -81.8075855914096,
+  "std": 1.234668195556748,
+  "metadata": {
+    "spec": "m3_only",
+    "path": "manual_m3",
+    "m3_cal_shots": 4096
+  },
+  "walltime_s": 128.3182680910104,
+  "spec": {
+    "name": "m3_only",
+    "m3": true,
+    "zne": false,
+    "zne_extrapolator": null,
+    "zne_noise_factors": null,
+    "shots": 2048
+  }
+}

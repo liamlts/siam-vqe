@@ -58,3 +58,44 @@ def test_compute_l1_levels_zero_U_collapses_to_simple_form() -> None:
     eps_d, eps_p = compute_l1_levels(U_dd=0.0, ten_dq=0.0, ten_dq_bath=0.0)
     assert eps_d == pytest.approx(2.6111111111111111, abs=1e-9)
     assert eps_p == pytest.approx(-2.0888888888888888, abs=1e-9)
+
+
+def test_compute_l2_levels_returns_l2levels_dataclass() -> None:
+    from siam_vqe.reference_edrixs import compute_l2_levels, L2Levels
+    levels = compute_l2_levels()
+    assert isinstance(levels, L2Levels)
+    assert hasattr(levels, "U")
+    assert hasattr(levels, "U_prime")
+    assert hasattr(levels, "J_H")
+    assert hasattr(levels, "V")
+    assert hasattr(levels, "eps_d")
+    assert hasattr(levels, "eps_p")
+
+
+def test_compute_l2_levels_kanamori_relation() -> None:
+    """U = U' + 2 J_H must hold exactly."""
+    from siam_vqe.reference_edrixs import compute_l2_levels
+    levels = compute_l2_levels()
+    assert abs(levels.U - levels.U_prime - 2 * levels.J_H) < 1e-12
+
+
+def test_compute_l2_levels_eps_d_eps_p_match_phase_2_recipe() -> None:
+    """ε_d and ε_p should reuse compute_l1_levels' CT_imp_bath solution."""
+    from siam_vqe.reference_edrixs import compute_l2_levels, compute_l1_levels
+    levels = compute_l2_levels()
+    eps_d_l1, eps_p_l1 = compute_l1_levels()
+    # L2 reuses L1's CT_imp_bath + eg shift recipe with the same default params
+    assert levels.eps_d == eps_d_l1
+    assert levels.eps_p == eps_p_l1
+
+
+def test_compute_l2_levels_J_matches_stk_convention() -> None:
+    """J_H must equal the value committed in the kanamori-convention decision record.
+    See docs/superpowers/notes/2026-05-25-kanamori-convention.md."""
+    from siam_vqe.reference_edrixs import compute_l2_levels
+    levels = compute_l2_levels()
+    # STK Racah: J = 4B + C with F²=9.787, F⁴=6.078
+    # B = (9F² - 5F⁴)/441 = 0.1308; C = 5F⁴/63 = 0.4824
+    # J_H = 4*0.1308 + 0.4824 = 1.0057 eV
+    EXPECTED_J = 1.0057  # eV (STK convention, locked Task 1)
+    assert abs(levels.J_H - EXPECTED_J) < 1e-3

@@ -1,0 +1,273 @@
+{
+  "backend": "FakeMarrakesh",
+  "shots_per_config": 2048,
+  "configs": {
+    "no_mit": {
+      "status": "ok",
+      "energy": -80.04290618729999,
+      "std": 1.76983466555698,
+      "metadata": {
+        "spec": "no_mit",
+        "path": "no_mit"
+      },
+      "walltime_s": 5.126115648017731,
+      "spec": {
+        "name": "no_mit",
+        "m3": false,
+        "zne": false,
+        "zne_extrapolator": null,
+        "zne_noise_factors": null,
+        "shots": 2048
+      }
+    },
+    "m3_only": {
+      "status": "ok",
+      "energy": -81.8075855914096,
+      "std": 1.234668195556748,
+      "metadata": {
+        "spec": "m3_only",
+        "path": "manual_m3",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 128.3182680910104,
+      "spec": {
+        "name": "m3_only",
+        "m3": true,
+        "zne": false,
+        "zne_extrapolator": null,
+        "zne_noise_factors": null,
+        "shots": 2048
+      }
+    },
+    "zne_lin_135": {
+      "status": "ok",
+      "energy": -85.10219757439333,
+      "std": 6.1199915822131965,
+      "metadata": {
+        "spec": "zne_lin_135",
+        "path": "manual_zne",
+        "zne_raw_values": [
+          -79.91428239094564,
+          -63.45265641997809,
+          -54.29398517389709
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear"
+      },
+      "walltime_s": 25.06229810998775,
+      "spec": {
+        "name": "zne_lin_135",
+        "m3": false,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 2048
+      }
+    },
+    "m3_zne_lin_135": {
+      "status": "ok",
+      "energy": -86.08996009208573,
+      "std": 6.128530207801953,
+      "metadata": {
+        "spec": "m3_zne_lin_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -80.90376548447054,
+          -64.39789982550728,
+          -55.25220589902345
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 375.0738631829736,
+      "spec": {
+        "name": "m3_zne_lin_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 2048
+      }
+    },
+    "m3_zne_exp_135": {
+      "status": "ok",
+      "energy": -93.25754282183343,
+      "std": 6.112106995414433,
+      "metadata": {
+        "spec": "m3_zne_exp_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -80.58787746038716,
+          -64.12948526633717,
+          -55.004373663083676
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "exponential",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 286.52491021703463,
+      "spec": {
+        "name": "m3_zne_exp_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "exponential",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 2048
+      }
+    },
+    "m3_zne_poly3_135": {
+      "status": "ok",
+      "energy": -93.08163071836266,
+      "std": 6.375629126062044,
+      "metadata": {
+        "spec": "m3_zne_poly3_135",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -81.45729789180827,
+          -64.16022815216202,
+          -54.79861963046589
+        ],
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "zne_extrapolator": "polynomial_degree_3",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 382.0768477829988,
+      "spec": {
+        "name": "m3_zne_poly3_135",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "polynomial_degree_3",
+        "zne_noise_factors": [
+          1.0,
+          3.0,
+          5.0
+        ],
+        "shots": 2048
+      }
+    },
+    "m3_zne_lin_123": {
+      "status": "ok",
+      "energy": -88.88004053666941,
+      "std": 3.587929735300354,
+      "metadata": {
+        "spec": "m3_zne_lin_123",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -80.5076702734222,
+          -75.87857050527882,
+          -65.63456499447967
+        ],
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 312.11156469903653,
+      "spec": {
+        "name": "m3_zne_lin_123",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "shots": 2048
+      }
+    },
+    "m3_zne_lin_12345": {
+      "status": "ok",
+      "energy": -86.61896174772346,
+      "std": 4.057901368999965,
+      "metadata": {
+        "spec": "m3_zne_lin_12345",
+        "path": "manual_m3_plus_zne",
+        "zne_raw_values": [
+          -81.66571410429704,
+          -74.7774962421242,
+          -63.83615113471515,
+          -62.43103313441866,
+          -56.56621142569362
+        ],
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "zne_extrapolator": "linear",
+        "m3_cal_shots": 4096
+      },
+      "walltime_s": 495.52078338799765,
+      "spec": {
+        "name": "m3_zne_lin_12345",
+        "m3": true,
+        "zne": true,
+        "zne_extrapolator": "linear",
+        "zne_noise_factors": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "shots": 2048
+      }
+    }
+  },
+  "ed_energy": -95.3999985731477,
+  "noiseless_vqe_energy": -95.3999658761328,
+  "x_star": [
+    -0.0011974438500694296,
+    0.06101029214806243,
+    -0.019599216563421434,
+    -0.003983130980715902,
+    0.06090185887998029,
+    -0.06515399928343993,
+    -0.0003014136197145696,
+    3.825122400524824e-06,
+    -0.004858998605575708,
+    2.8876863131674128e-05,
+    -0.00041045569555587874,
+    -1.1970750499369745e-05,
+    -0.004856541946891141,
+    -2.8308396464726826e-06,
+    -0.07928824518085442
+  ],
+  "wall_started": "2026-05-25T11:03:16",
+  "wall_ended": "2026-05-25T11:36:46"
+}

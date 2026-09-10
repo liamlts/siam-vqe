@@ -19,6 +19,8 @@ dx²-y² orbital pair (lines 156-202 of example_03_AIM_XAS.py).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 
 def compute_l1_levels(
     U_dd: float = 7.3,
@@ -46,3 +48,74 @@ def compute_l1_levels(
     eps_d = e_d + 0.6 * ten_dq
     eps_p = e_l + 0.6 * ten_dq_bath
     return float(eps_d), float(eps_p)
+
+
+# L2 Kanamori convention: locked in Phase 3 Task 1 (see
+# docs/superpowers/notes/2026-05-25-kanamori-convention.md).
+# STK Racah pins the ¹A₁g multiplet gap (4J = 16B + 4C = 4.022 eV) exactly.
+_L2_J_CONVENTION = "stk"
+_L2_F2 = 9.787  # eV
+_L2_F4 = 6.078  # eV
+
+
+@dataclass(frozen=True)
+class L2Levels:
+    """Kanamori + bath parameters for the L2 NiO e_g² SIAM.
+
+    All values in eV.
+    """
+
+    U: float
+    U_prime: float
+    J_H: float
+    V: float
+    eps_d: float
+    eps_p: float
+
+
+def compute_l2_levels(
+    F2: float = _L2_F2,
+    F4: float = _L2_F4,
+    U_dd: float = 7.3,
+    V_eg: float = 2.06,
+    Delta: float = 4.7,
+    nd: int = 8,
+    ten_dq: float = 0.56,
+    ten_dq_bath: float = 1.44,
+) -> L2Levels:
+    """Compute Kanamori (U, U', J_H), hybridization V, and bath levels (ε_d, ε_p)
+    for the L2 NiO e_g² SIAM.
+
+    Returns an L2Levels dataclass. The J convention is set by _L2_J_CONVENTION.
+    """
+    if _L2_J_CONVENTION == "pavarini":
+        U_eg = U_dd + 4 * F2 / 49 + 36 * F4 / 441
+        J_H = 3 * F2 / 49 + 20 * F4 / 441
+    elif _L2_J_CONVENTION == "stk":
+        # Sugano-Tanabe-Kamimura Racah-derived: pins ¹A₁g multiplet gap exactly.
+        B = (9 * F2 - 5 * F4) / 441
+        C = 5 * F4 / 63
+        A = U_dd - 49 * F4 / 441
+        U_eg = A + 4 * B + 3 * C
+        J_H = 4 * B + C
+    else:
+        raise ValueError(
+            f"Unknown Kanamori J convention: {_L2_J_CONVENTION!r}. "
+            "Must be 'pavarini' or 'stk'; see Phase 3 task 1."
+        )
+
+    U_prime = U_eg - 2 * J_H
+
+    # Reuse compute_l1_levels' CT_imp_bath core for ε_d, ε_p.
+    eps_d, eps_p = compute_l1_levels(
+        U_dd=U_dd, Delta=Delta, nd=nd, ten_dq=ten_dq, ten_dq_bath=ten_dq_bath
+    )
+
+    return L2Levels(
+        U=U_eg,
+        U_prime=U_prime,
+        J_H=J_H,
+        V=V_eg,
+        eps_d=eps_d,
+        eps_p=eps_p,
+    )
