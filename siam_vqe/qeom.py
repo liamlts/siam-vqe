@@ -246,4 +246,5 @@ def compute_spectral_weights(
     # amplitudes shape: (K', K) — rows are excited states.
     # spectral weight for state n: |Σ_m X_n[m]* · tmd[m]|²
     overlaps = amplitudes.conj() @ tmd_matrix_elements
-    return np.abs(overlaps) ** 2
+    weights: np.ndarray = np.abs(overlaps) ** 2
+    return weights

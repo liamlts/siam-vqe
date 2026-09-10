@@ -33,7 +33,8 @@ def _make_d_orbital_number_op(alpha: int, num_spin_orbitals: int) -> FermionicOp
     """n_{d_α} = n_{d_α↑} + n_{d_α↓}."""
     up = _make_number_op(alpha, num_spin_orbitals)
     dn = _make_number_op(alpha + _N_SPATIAL, num_spin_orbitals)
-    return (up + dn).simplify()
+    n_orb: FermionicOp = (up + dn).simplify()
+    return n_orb
 
 
 def _make_S2(num_spin_orbitals: int) -> FermionicOp:
@@ -57,7 +58,7 @@ def _make_S2(num_spin_orbitals: int) -> FermionicOp:
     S_minus = S_plus.adjoint()
 
     # S² = S_+ S_- + S_z² - S_z
-    S_sq = (S_plus @ S_minus + S_z @ S_z - S_z).simplify()
+    S_sq: FermionicOp = (S_plus @ S_minus + S_z @ S_z - S_z).simplify()
     return S_sq
 
 

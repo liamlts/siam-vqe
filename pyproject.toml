@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "siam_vqe"
-version = "0.1.0"
+version = "0.4.0"
 description = "VQE for single-impurity Anderson models on Qiskit, validated against EDRIXS."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,15 +47,16 @@ ignore = ["E501"]  # let formatter handle line length
 [tool.ruff.lint.per-file-ignores]
 "siam_vqe/__init__.py" = ["F401"]
 "siam_vqe/adapt_vqe.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
-"siam_vqe/analysis.py" = ["N803", "N806", "SIM300"]
-"siam_vqe/core_hole.py" = ["N806", "RUF002"]
+"siam_vqe/analysis.py" = ["N803", "N806", "SIM300", "RUF002"]
+"siam_vqe/core_hole.py" = ["N803", "N806", "RUF002"]
 "siam_vqe/dipole.py" = ["N806", "RUF002"]
 "siam_vqe/hamiltonian.py" = ["N803", "RUF002", "RUF003"]
 "siam_vqe/hamiltonian_l3.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
 "siam_vqe/observables_l3.py" = ["N802", "N806", "RUF002", "RUF003"]
 "siam_vqe/qeom.py" = ["N803", "N806", "N815", "RUF002", "RUF003"]
-"siam_vqe/reference_edrixs.py" = ["N803"]
+"siam_vqe/reference_edrixs.py" = ["N803", "N806"]
 "siam_vqe/reference_l3.py" = ["N806"]
+"siam_vqe/noise.py" = ["RUF002"]
 "siam_vqe/tapering_l3.py" = ["RUF002"]
 "siam_vqe/vqe_runner.py" = ["N803"]
 "siam_vqe/xas.py" = ["N803", "N806", "N815", "RUF002"]
@@ -63,7 +64,7 @@ ignore = ["E501"]  # let formatter handle line length
 "tests/test_hamiltonian_l3.py" = ["N802", "N803", "N806", "SIM300", "RUF001", "RUF002", "RUF003"]
 "tests/test_observables.py" = ["N802", "N803", "N806"]
 "tests/test_observables_l3.py" = ["N802", "RUF002"]
-"tests/test_reference_edrixs.py" = ["N802", "N803"]
+"tests/test_reference_edrixs.py" = ["N802", "N803", "N806", "I001"]
 "tests/test_reference_l3.py" = ["N802", "RUF003"]
 "tests/test_tapering_l3.py" = ["N806"]
 "tests/test_vqe_runner.py" = ["N803"]
@@ -73,14 +74,21 @@ ignore = ["E501"]  # let formatter handle line length
 "tests/test_qeom.py" = ["N806", "RUF002", "RUF003"]
 "tests/test_xas.py" = ["N806", "RUF002", "RUF003"]
 "tests/test_vqe_runner_adapt.py" = ["N802", "N803", "N806", "RUF002", "RUF003"]
-"tests/test_analysis.py" = ["N803", "N806"]
+"tests/test_analysis.py" = ["N803", "N806", "I001", "SIM105"]
+"tests/test_edrixs_path_a_geometry.py" = ["I001"]
+"tests/test_hadamard_test.py" = ["I001", "RUF002", "RUF003"]
+"tests/test_hardware.py" = ["I001"]
+"tests/test_l1_core_hole.py" = ["RUF002"]
 "tests/test_run_l3_adapt.py" = ["N802", "N803", "N806"]
+"scripts/run_l1_xas_hw.py" = ["N806", "RUF002", "RUF003", "E402"]
 "scripts/run_l3_adapt.py" = ["N802", "N803", "N806", "RUF002", "RUF003", "E402"]
 "scripts/build_h_prime_ed_reference.py" = ["E402"]
 "scripts/run_l3_h_prime_vqe.py" = ["N802", "N803", "N806", "RUF002", "RUF003", "E402"]
 "scripts/build_edrixs_xas_reference.py" = ["N802", "N803", "N806", "RUF001", "RUF002", "RUF003", "E402"]
 "scripts/build_edrixs_xas_reference_path_a.py" = ["N802", "N803", "N806", "N816", "BLE001", "RUF001", "RUF002", "RUF003", "E402"]
 "scripts/run_l3_xas_sim.py" = ["N802", "N803", "N806", "RUF001", "RUF002", "RUF003", "E402"]
+"scripts/spike_local_mode_estimator.py" = ["F401", "I001"]
+"scripts/verify_kanamori_convention.py" = ["N803", "N806", "N816", "I001", "F541", "RUF003", "E402"]
 "notebooks/_04_build.py" = ["N802", "N803", "N806", "RUF001", "RUF002", "RUF003", "E501"]
 
 [tool.mypy]
@@ -90,9 +98,28 @@ warn_unreachable = true
 files = ["siam_vqe"]
 
 [[tool.mypy.overrides]]
-module = ["mthree.*", "qiskit.*", "qiskit_nature.*", "qiskit_algorithms.*", "qiskit_aer.*", "qiskit_ibm_runtime.*", "scipy.*", "matplotlib.*"]
+module = ["mthree.*", "sympy.*", "qiskit.*", "qiskit_nature.*", "qiskit_algorithms.*", "qiskit_aer.*", "qiskit_ibm_runtime.*", "scipy.*", "matplotlib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
+# Interim suppression of Qiskit-Pulse-package deprecations that originate
+# entirely inside the pinned dependencies (qiskit 1.4.5 / qiskit-aer 0.17.2 /
+# qiskit-ibm-runtime 0.44.1), NOT in siam_vqe. The M3 path runs FakeMarrakesh's
+# huge noise model through qiskit-aer, which reads the deprecated
+# Instruction.condition property via getattr() once per instruction
+# (quantum_error.py:322, aer_compiler.py:695) — ~600k warnings per M3 run, ~1.5M
+# across the suite. Transpiling against FakeMarrakesh's pulse-carrying backend
+# trips DAGCircuit/QuantumCircuit.calibrations in qiskit's pulse_gate_validation
+# pass and qiskit-ibm-runtime utils. None is actionable in this repo. This is a
+# STOPGAP: in Qiskit 2.0 the Pulse package is removed, so the real fix is the
+# 2.0-ready dependency migration, after which these warnings disappear at the
+# source. Filters are message-scoped (not blanket DeprecationWarning) so genuine
+# deprecations in siam_vqe's own API usage still surface. See
+# docs/superpowers/notes/2026-05-29-pulse-deprecation-triage.md
+filterwarnings = [
+    "ignore:The property ``qiskit.circuit.instruction.Instruction.condition``:DeprecationWarning",
+    "ignore:The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.calibrations``:DeprecationWarning",
+    "ignore:The property ``qiskit.circuit.quantumcircuit.QuantumCircuit.calibrations``:DeprecationWarning",
+]

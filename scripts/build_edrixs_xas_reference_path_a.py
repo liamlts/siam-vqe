@@ -229,51 +229,100 @@ def main() -> None:
         print(f"[edrixs_path_a] eval_i[0:3]             = {eval_i[:3]}")
 
     # ------------------------------------------------------------------
-    # Run XAS for each polarization channel
+    # Run XAS for each polarization channel via scatter_axis rotation
     # ------------------------------------------------------------------
-    # EDRIXS polarization syntax (from `edrixs.xas_siam_fort` docs):
-    #   poltype_xas is a list of (pol_string, angle_in_radians) tuples.
-    #   pol_string ∈ {'isotropic', 'left', 'right', 'linear'}.
-    #   For 'linear', the angle specifies the polarization vector direction
-    #   relative to the crystal x-axis in the scattering plane.
+    # Phase 5 followup note (2026-05-28-phase-5-path-a-followup.md)
+    # diagnosed why all three channels collapsed in the prior version:
     #
-    # To map to Phase 5's lin_z and lin_xy:
-    #   lin_z: incidence angle thin=π/2 (along z), pol='linear', angle=0
-    #          — polarization is in the z direction (the incident wavevector
-    #          must be perpendicular to it; standard choice is k along x).
-    #   lin_xy: incidence thin=0 (along z), pol='linear', angle=0 OR 'isotropic'
-    #          minus the lin_z component. Powder-averaged in-plane.
+    #   `pol_type=('linear', alpha)` selects the polarization angle WITHIN
+    #   the scattering plane (alpha is angle between pol vector and the
+    #   plane), NOT relative to a crystal axis. The scattering plane is
+    #   defined by `scatter_axis` as its local zx-plane.
     #
-    # Empirically: EDRIXS may accept these polarization labels directly;
-    # if not, the user should consult the edrixs.xas_siam_fort docstring
-    # inside the container and adjust this script accordingly. The script
-    # logs which channels succeeded.
+    # In EDRIXS conventions:
+    #   - alpha = 0       => π-polarization, pol vector in the scattering
+    #                        plane (depends on thin)
+    #   - alpha = π/2     => σ-polarization, pol vector NORMAL to the
+    #                        scattering plane (== local y axis,
+    #                        == scatter_axis[:,1])
+    #
+    # Strategy used here: take alpha=π/2 so that the polarization vector
+    # is exactly the local-y axis of the scattering frame. Then rotate
+    # `scatter_axis` so that its 2nd column (local-y) coincides with
+    # crystal x, y, z in turn. This gives three genuinely distinct
+    # polarization geometries.
+    #
+    # ------------------------------------------------------------------
+    # Honesty clause (Phase 5b Task 1 closeout, 2026-05-28)
+    # ------------------------------------------------------------------
+    # With the rotations below applied correctly, EDRIXS produces three
+    # BIT-FOR-BIT IDENTICAL spectra (max |sigma_x - sigma_y| = 0.0).
+    # This is not a bug in the geometry call — it is the correct physics
+    # for the Phase 5 model:
+    #
+    #   - Cubic crystal field only (no tetragonal / trigonal splitting)
+    #   - Cubic hybridization (cubic-grouped Veg / Vt2g)
+    #   - No SOC (zeta_d = 0)
+    #   - No applied magnetic field (ext_B = 0)
+    #   - Spin-summed isotropic dipole (no preferred axis)
+    #
+    # The point group is O_h, so the linear absorption tensor sigma_{ij}
+    # is proportional to delta_{ij}, and sigma_x(omega) = sigma_y(omega)
+    # = sigma_z(omega) exactly. Distinct channels require breaking O_h
+    # (e.g. tetragonal CF for strained thin films, or turning on SOC).
+    # Both are deferred to a later Phase 5b task; downstream tasks do
+    # not depend on channel distinctness. See followup note.
+
+    sqrt_pi_2 = np.pi / 2
+
+    # scatter_axis columns = [x_local, y_local, z_local]; we pick
+    # right-handed (det=+1) orthonormal frames where the y_local column
+    # equals the desired crystal-axis polarization direction.
+    scatter_axes: dict[str, np.ndarray] = {
+        # lin_x: y_local = (1,0,0) ; x_local = (0,1,0) ; z_local = (0,0,-1)
+        "lin_x": np.array([[0.0, 1.0, 0.0],
+                           [1.0, 0.0, 0.0],
+                           [0.0, 0.0, -1.0]]),
+        # lin_y: y_local = (0,1,0) ; identity frame
+        "lin_y": np.eye(3),
+        # lin_z: y_local = (0,0,1) ; x_local = (1,0,0) ; z_local = (0,-1,0)
+        "lin_z": np.array([[1.0, 0.0, 0.0],
+                           [0.0, 0.0, -1.0],
+                           [0.0, 1.0, 0.0]]),
+    }
+
+    # Sanity-check the rotations on rank 0.
+    if rank == 0:
+        for ch, R in scatter_axes.items():
+            det = float(np.linalg.det(R))
+            orth = float(np.linalg.norm(R @ R.T - np.eye(3)))
+            print(f"[edrixs_path_a] scatter_axis[{ch}] det={det:+.6f}, "
+                  f"|R Rᵀ - I|={orth:.2e}, y_col={R[:,1].tolist()}")
 
     spectra: dict[str, np.ndarray] = {}
-    channels = [
-        ("lin_z",  [("linear", np.pi / 2)]),  # placeholder syntax
-        ("lin_xy", [("linear", 0.0)]),
-        ("isotropic", [("isotropic", 0.0)]),
-    ]
-
-    for ch_name, pol in channels:
+    for ch_name, scatter_mat in scatter_axes.items():
         if rank == 0:
-            print(f"[edrixs_path_a] Computing XAS for channel '{ch_name}' ...")
+            print(f"[edrixs_path_a] Computing XAS for channel '{ch_name}' "
+                  f"(σ-pol along crystal-{ch_name.split('_')[-1]}) ...")
         try:
             xas, _xas_poles = edrixs.xas_siam_fort(
                 comm, shell_name, nbath, ominc_xas,
                 gamma_c=gamma_c, v_noccu=v_noccu,
                 thin=thin, phi=phi,
                 num_gs=3, nkryl=200,
-                pol_type=pol,
+                pol_type=[("linear", sqrt_pi_2)],
+                scatter_axis=scatter_mat,
                 temperature=temperature,
             )
             spectra[ch_name] = np.asarray(xas).flatten()
+            if rank == 0:
+                print(f"[edrixs_path_a]   |sigma_{ch_name}| = "
+                      f"{np.linalg.norm(spectra[ch_name]):.6f}")
         except Exception as exc:
             if rank == 0:
                 print(f"[edrixs_path_a] Channel '{ch_name}' failed: {exc!r}")
                 print("[edrixs_path_a] Inspect edrixs.xas_siam_fort docs and "
-                      "adjust pol_type syntax in this script.")
+                      "adjust pol_type / scatter_axis syntax in this script.")
 
     # ------------------------------------------------------------------
     # Save NPZ (rank 0 only)
@@ -286,23 +335,37 @@ def main() -> None:
         # Shift omega grid so leading peak sits at ω₀ = 0 (matches Phase 5 +
         # Path-B convention).
         omega_relative = ominc_xas - om_shift
-        # If we have all three channels, also save the lin_z and lin_xy as
-        # the primary keys; isotropic is a cross-check.
-        save_payload = {
+
+        save_payload: dict[str, np.ndarray] = {
+            # Primary grid (Phase 5b schema): plain `omega_grid` key.
+            "omega_grid": omega_relative,
+            # Backward-compat alias kept for any downstream code that read
+            # the prior schema:
             "omega_grid_eV": omega_relative,
             "Gamma_eV": np.array(0.5),
             "om_shift_eV": np.array(om_shift),
             "notes": np.array(
-                "EDRIXS Path-A reference for L3 NiO XAS. Generated inside "
-                "edrixs_run Docker container. No SOC, no multipoles "
-                "(monopole core-hole only) — matches Phase 5 v1."),
+                "EDRIXS Path-A reference for L3 NiO XAS, polarization-resolved "
+                "via scatter_axis rotation (Phase 5b Task 1). Three channels "
+                "lin_x/lin_y/lin_z plus isotropic = (x+y+z)/3. Generated "
+                "inside edrixs/edrixs:latest Docker container. No SOC, no "
+                "multipoles (monopole core-hole only) — matches Phase 5 v1."),
             "channels_present": np.array(list(spectra.keys())),
         }
         for ch_name, sigma in spectra.items():
             save_payload[f"sigma_{ch_name}"] = sigma
+
+        # Isotropic average only meaningful if all three channels are present.
+        if {"lin_x", "lin_y", "lin_z"}.issubset(spectra.keys()):
+            save_payload["sigma_isotropic"] = (
+                spectra["lin_x"] + spectra["lin_y"] + spectra["lin_z"]
+            ) / 3.0
+
         np.savez(out, **save_payload)
         print(f"[edrixs_path_a] Wrote {out}")
         print(f"[edrixs_path_a] Channels saved: {list(spectra.keys())}")
+        print("[edrixs_path_a] Per-channel L2 norms: " + ", ".join(
+            f"{k}={np.linalg.norm(v):.6f}" for k, v in spectra.items()))
 
 
 if __name__ == "__main__":

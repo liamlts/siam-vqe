@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
+from typing import Any
 
 import numpy as np
 import scipy.sparse as sp
@@ -83,7 +84,7 @@ def _build_sector_basis(num_d_spin_orbitals: int, n_up: int, n_down: int) -> lis
     return sorted(u | d for u in up_states for d in dn_states)
 
 
-def _fermionic_op_to_sparse_matrix(op, basis: list[int]):
+def _fermionic_op_to_sparse_matrix(op: Any, basis: list[int]) -> sp.csr_matrix:
     """Build a sparse matrix of `op` in the given basis (occupation-number Fock states).
 
     Each FermionicOp label like '+_2 -_0 +_5 -_3' is applied bit-by-bit, with

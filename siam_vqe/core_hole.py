@@ -82,7 +82,57 @@ def nio_l3_core_hole_hamiltonian(
     """
     H = nio_l3_hamiltonian(params)
     V = v_core_operator(params, ch)
-    return (H + V).simplify()
+    h_total: FermionicOp = (H + V).simplify()
+    return h_total
+
+
+def v_core_operator_l1(ch: CoreHoleParams) -> FermionicOp:
+    """V_core on the L1 active space: V = -U_dc Σ_σ n_{d, σ}.
+
+    The L1 model (`nio_l1_anderson`) uses Phase 1's all-up-then-all-down
+    layout: 0=d↑, 1=p↑, 2=d↓, 3=p↓. The impurity mode indices are imported
+    from `hamiltonian._L1_IMPURITY_MODES` as the single source of truth
+    rather than hardcoded here, so the L1 layout convention lives in
+    exactly one place.
+
+    The core hole couples only to the IMPURITY d-orbital; the ligand
+    (p) modes are core-hole-blind in this single-impurity Anderson model.
+    """
+    if ch.include_multipoles:
+        raise NotImplementedError(
+            "G^1_dc / G^3_dc multipoles are deferred to Phase 5 v2."
+        )
+
+    if ch.U_dc == 0.0:
+        return FermionicOp({}, num_spin_orbitals=4)
+
+    from siam_vqe.hamiltonian import _L1_IMPURITY_MODES
+
+    labels = {f"+_{m} -_{m}": -ch.U_dc for m in _L1_IMPURITY_MODES}
+    return FermionicOp(labels, num_spin_orbitals=4)
+
+
+def nio_l1_core_hole_hamiltonian(
+    ch: CoreHoleParams,
+    *,
+    U: float = 7.3,
+    V: float = 2.06,
+    eps_d: float = 2.5,
+    eps_p: float = -2.5,
+) -> FermionicOp:
+    """H'_L1 = H_L1 + V_core_L1 in the L1 active space.
+
+    Parameters default to the half-filling reference point used elsewhere
+    in the test suite (e.g. `test_nio_l1_anderson_half_filling_groundstate_known_values`,
+    `test_analysis`, `test_observables`). Override these to study other
+    L1 parameter regimes.
+    """
+    from siam_vqe.hamiltonian import nio_l1_anderson
+
+    h_l1 = nio_l1_anderson(U=U, V=V, eps_d=eps_d, eps_p=eps_p)
+    v_core = v_core_operator_l1(ch)
+    h_total_l1: FermionicOp = (h_l1 + v_core).simplify()
+    return h_total_l1
 
 
 def tapered_l3_h_prime_pauli(

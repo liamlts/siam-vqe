@@ -1,8 +1,10 @@
-"""Noisy Estimator V2 wrappers for siam_vqe.
+"""Noisy quantum-circuit execution and manual error mitigation (M3 readout correction + digital ZNE) for siam_vqe.
 
-Owns the simulator-side noise plumbing for Phase 2. Phase 3 will extend this
-module with M3 readout error mitigation and ZNE; Phase 2 only ships the
-FakeBackend-derived Aer Estimator.
+The hardware-reachable execution path routes counts through
+qiskit_ibm_runtime.SamplerV2 (local Aer/fake backends and real IBM hardware
+via the same API); MitigatedEstimator and the Hadamard-test helpers build on
+it. The simulator-only helpers make_noisy_estimator and run_manual_zne retain
+qiskit.primitives.BackendEstimatorV2 for the completed L2 noise study.
 
 This module does NOT build hand-rolled noise models. It relies on Aer's
 ``AerSimulator.from_backend()`` which extracts calibration / readout / pulse-
@@ -27,12 +29,28 @@ from typing import Any
 
 import numpy as np
 from qiskit import ClassicalRegister, QuantumCircuit, transpile
-from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
+from qiskit.circuit.controlflow import CONTROL_FLOW_OP_NAMES
+from qiskit.circuit.library.standard_gates import get_standard_gate_name_mapping
+from qiskit.primitives import BackendEstimatorV2
 from qiskit.providers import BackendV2
 from qiskit.quantum_info import SparsePauliOp
 from qiskit_aer import AerSimulator
+from qiskit_ibm_runtime import SamplerV2
 
 from siam_vqe.mitigation import MitigationSpec
+
+# Gate names ``transpile`` accepts through ``basis_gates`` without raising the
+# Qiskit 1.3 "non-standard gates" DeprecationWarning (a hard error in 2.0):
+# the standard gate set plus the structural ops the transpiler always allows.
+# Mirrors qiskit's own allow-list in
+# ``transpiler.preset_passmanagers.generate_preset_pass_manager._parse_basis_gates``.
+# A bare AerSimulator's target also advertises save_*/set_*/mcx_gray names, which
+# are not real gates and must be filtered out before they reach ``basis_gates=``.
+_BASIS_GATES_ALLOWLIST: frozenset[str] = frozenset(
+    set(get_standard_gate_name_mapping())
+    | {"measure", "delay", "reset"}
+    | set(CONTROL_FLOW_OP_NAMES)
+)
 
 
 def make_noisy_estimator(
@@ -229,6 +247,37 @@ def _extrapolate_zne(
 # ---------------------------------------------------------------------------
 
 _M3_CAL_SHOTS: int = 4096
+_ISA_TRANSPILE_SEED: int = 1234  # deterministic routing/layout for reproducible ZNE folds
+
+
+def _sample_counts(
+    mode: Any,
+    circuit: QuantumCircuit,
+    shots: int,
+    *,
+    creg_name: str | None = None,
+) -> dict[str, int]:
+    """Run one measured circuit through qiskit_ibm_runtime.SamplerV2 and return counts.
+
+    ``mode`` is anything SamplerV2 accepts: a BackendV2 (local Aer/fake) or an
+    open Batch/Session (hardware; also valid locally). Counts are read from the
+    result DataBin by classical-register name; if ``creg_name`` is None the
+    circuit's sole classical register name is used.
+    """
+    if shots < 1:
+        raise ValueError(f"shots must be >= 1, got {shots}")
+    if creg_name is None:
+        if len(circuit.cregs) != 1:
+            raise ValueError(
+                f"_sample_counts needs an explicit creg_name when the circuit has "
+                f"{len(circuit.cregs)} classical registers (expected exactly 1)."
+            )
+        creg_name = circuit.cregs[0].name
+    sampler = SamplerV2(mode=mode)
+    result = sampler.run([(circuit,)], shots=shots).result()
+    data_bin = result[0].data
+    counts: dict[str, int] = getattr(data_bin, creg_name).get_counts()
+    return counts
 
 
 @dataclass
@@ -262,6 +311,15 @@ class _MitigatedJob:
         return self._result
 
 
+def _unwrap_backendv2(backend: Any) -> Any:
+    """Return the underlying BackendV2 from a Batch/Session wrapper, or ``backend``.
+
+    qiskit_ibm_runtime Batch/Session expose the device as ``._backend``; a bare
+    BackendV2/AerSimulator has no such attribute and is returned unchanged.
+    """
+    return getattr(backend, "_backend", backend)
+
+
 def _physical_qubits_from_layout(qc: QuantumCircuit) -> list[int]:
     """Physical qubit indices a transpiled circuit's logical qubits map to.
 
@@ -281,7 +339,7 @@ def _physical_qubits_from_layout(qc: QuantumCircuit) -> list[int]:
 
 def _retranslate_to_basis(
     circuit: QuantumCircuit,
-    backend: BackendV2 | AerSimulator,
+    backend: Any,
 ) -> QuantumCircuit:
     """Translate ``circuit``'s gates into ``backend``'s basis, leaving the
     qubit layout untouched.
@@ -294,18 +352,116 @@ def _retranslate_to_basis(
 
     Using ``transpile(..., basis_gates=..., optimization_level=0)`` runs
     ``BasisTranslator`` only — no layout or routing passes — so the
-    folded/rotated circuit stays mapped to the same physical qubits.
+    folded/rotated circuit stays mapped to the same physical qubits. The
+    introspected basis is filtered to ``_BASIS_GATES_ALLOWLIST`` first: a bare
+    AerSimulator's target lists non-standard names (save_*, set_*, mcx_gray)
+    that ``basis_gates=`` deprecates in Qiskit 1.3 and rejects in 2.0. Those
+    names never appear in circuits, so dropping them from the allowed output
+    basis is behaviour-preserving.
+
+    ``transpile`` discards the input's ``TranspileLayout`` when only basis
+    translation runs, so it is copied back onto the result: re-translation does
+    not route, hence the original physical-qubit mapping still holds, and M3
+    readout calibration downstream reads ``final_index_layout()`` off the pub
+    circuit (this preserves it for any caller that inspects the result too).
+
+    When ``backend`` is a Batch or Session (no ``.target``), the underlying
+    backend is extracted via ``backend._backend`` for basis introspection.
     """
-    target = getattr(backend, "target", None)
+    # Unwrap Batch/Session to a real BackendV2 for target introspection.
+    introspect = getattr(backend, "_backend", backend)
+    target = getattr(introspect, "target", None)
     if target is not None and getattr(target, "operation_names", None):
         basis = list(target.operation_names)
-    elif hasattr(backend, "configuration"):
-        basis = list(backend.configuration().basis_gates)
+    elif hasattr(introspect, "configuration"):
+        basis = list(introspect.configuration().basis_gates)
     else:
         # No way to introspect — return unchanged; caller will surface any
         # downstream "unknown instruction" error with the original gate name.
         return circuit
+    basis = [g for g in basis if g in _BASIS_GATES_ALLOWLIST]
+    translated = transpile(circuit, basis_gates=basis, optimization_level=0)
+    if circuit.layout is not None and translated.layout is None:
+        translated._layout = circuit._layout
+    return translated
+
+
+def _assert_isa_connectivity(circuit: QuantumCircuit, isa_backend: Any) -> None:
+    """Raise RuntimeError if any 2-qubit gate is off ``isa_backend``'s coupling map.
+
+    No-op when the backend exposes no coupling map (e.g. bare AerSimulator) — there
+    is nothing to validate against. Barriers (which span multiple qubits but are not
+    gates) are skipped by name.
+    """
+    introspect = getattr(isa_backend, "_backend", isa_backend)
+    cmap = getattr(introspect, "coupling_map", None)
+    if cmap is None:
+        target = getattr(introspect, "target", None)
+        cmap = target.build_coupling_map() if target is not None else None
+    if cmap is None:
+        return
+    edges = {tuple(e) for e in cmap.get_edges()}
+    for instr in circuit.data:
+        op = instr.operation
+        if op.num_qubits == 2 and op.name != "barrier":
+            q = tuple(circuit.find_bit(b).index for b in instr.qubits)
+            if q not in edges and (q[1], q[0]) not in edges:
+                name = getattr(introspect, "name", "backend")
+                raise RuntimeError(
+                    f"2-qubit gate {op.name!r} on physical qubits {q} is off the "
+                    f"{name} coupling map (ISA-connectivity violation)."
+                )
+
+
+def _isa_basis_translate(circuit: QuantumCircuit, isa_backend: Any) -> QuantumCircuit:
+    """Translate ``circuit`` into ``isa_backend``'s basis (1-qubit only; no routing).
+
+    Sources the basis explicitly from ``isa_backend.target`` rather than the
+    Batch-unwrapping heuristics in ``_retranslate_to_basis`` — ``isa_backend`` is
+    always a concrete BackendV2 on the hardware path, so ``.target`` is reliably
+    present. ``optimization_level=0`` runs BasisTranslator only (no layout/routing),
+    so the physical-qubit mapping is preserved.
+    """
+    introspect = getattr(isa_backend, "_backend", isa_backend)
+    target = getattr(introspect, "target", None)
+    if target is not None and getattr(target, "operation_names", None):
+        basis = list(target.operation_names)
+    elif hasattr(introspect, "configuration"):
+        basis = list(introspect.configuration().basis_gates)
+    else:
+        return circuit
     return transpile(circuit, basis_gates=basis, optimization_level=0)
+
+
+def _fold_circuit_global_isa(
+    qc_isa: QuantumCircuit, factor: float, isa_backend: Any
+) -> QuantumCircuit:
+    """ISA-level global ZNE fold ``U·(U†·U)^n`` for an odd-integer noise factor.
+
+    ``qc_isa`` must already be transpiled to ``isa_backend``'s ISA (layout + basis +
+    routing) and contain no measurements. The fold is built on the same physical
+    qubits; the inverse of an ISA circuit stays connectivity-valid (cz self-inverse;
+    sx→sxdg, rz(θ)→rz(−θ) are 1-qubit), so no re-routing is needed — only a 1-qubit
+    basis re-translation of the introduced ``sxdg`` gates. Barriers separate each fold
+    segment to defend against any downstream gate cancellation/fusion. Raises if
+    ``factor`` is not an odd integer (local folding is out of ISA scope).
+    """
+    if factor != int(factor) or int(factor) % 2 == 0:
+        raise ValueError(
+            f"ISA ZNE requires odd-integer noise factors (global folding); got {factor}"
+        )
+    n = (int(factor) - 1) // 2
+    folded = qc_isa.copy()
+    if n > 0:
+        inv = qc_isa.inverse()
+        for _ in range(n):
+            folded.barrier()
+            folded = folded.compose(inv)
+            folded.barrier()
+            folded = folded.compose(qc_isa)
+    folded = _isa_basis_translate(folded, isa_backend)
+    _assert_isa_connectivity(folded, isa_backend)
+    return folded
 
 
 def _pauli_basis_groups(
@@ -368,31 +524,67 @@ def _build_basis_circuit(
     return meas
 
 
-def _eval_observable_with_m3(
+def _expval_from_counts(
+    counts: dict[str, int],
+    z_string: str,
+    physical_qubits: list[int],
+    n: int,
+) -> float:
+    """Raw (un-mitigated) parity expectation of a Pauli term from counts.
+
+    ``counts`` keys are bitstrings of length ``len(physical_qubits)`` in
+    Qiskit/M3 big-endian order: leftmost char = the qubit at
+    ``physical_qubits[-1]``. ``z_string`` is the full n-qubit Pauli label
+    (X/Y already rotated into Z by the basis circuit). A physical qubit
+    contributes to the parity iff its Pauli is non-identity.
+    """
+    # Which measured positions (0 = leftmost = physical_qubits[-1]) are active.
+    active_meas_positions = [
+        i
+        for i, q in enumerate(reversed(physical_qubits))
+        if z_string[n - 1 - q] != "I"
+    ]
+    total = sum(counts.values())
+    if total == 0:
+        return 0.0
+    acc = 0.0
+    for bitstring, c in counts.items():
+        parity = sum(int(bitstring[i]) for i in active_meas_positions) % 2
+        acc += c * (1 if parity == 0 else -1)
+    return acc / total
+
+
+def _eval_observable_from_counts(
     qc: QuantumCircuit,
     obs: SparsePauliOp,
-    backend: BackendV2 | AerSimulator,
-    m3: Any,  # mthree.M3Mitigation
+    mode: Any,
+    m3: Any,  # mthree.M3Mitigation, or None for raw (un-mitigated) expectation
     shots: int,
     physical_qubits: list[int],
+    isa_backend: Any = None,
 ) -> float:
-    """Evaluate ⟨obs⟩ using M3-corrected quasi-distributions on ``physical_qubits``.
+    """Evaluate ⟨obs⟩ from sampled counts on ``physical_qubits``.
 
-    Decomposes ``obs`` into per-basis measurement circuits (each measuring
-    only ``physical_qubits``), runs them via BackendSamplerV2 after a basis
-    re-translation step, applies M3 correction, and sums per-Pauli
-    contributions.
+    Decomposes ``obs`` into per-basis measurement circuits (each measuring only
+    ``physical_qubits``), runs them via ``_sample_counts`` (SamplerV2) after a
+    basis re-translation step, and sums per-Pauli contributions. If ``m3`` is
+    provided, applies M3 readout correction; if ``m3`` is None, uses the raw
+    parity expectation.
 
     ``obs`` has ``qc.num_qubits`` qubits; identity-only positions outside
     ``physical_qubits`` are skipped implicitly (they contribute +1 to every
     bitstring's parity, so dropping them is exact).
+
+    When ``mode`` has no introspectable basis (e.g. an open Batch on real
+    hardware), the caller is responsible for passing circuits already
+    transpiled to the backend ISA — ``_retranslate_to_basis`` returns such
+    circuits unchanged.
     """
     if not np.allclose(obs.coeffs.imag, 0, atol=1e-12):
         raise ValueError(
             f"Observable coefficients must be Hermitian (real); "
             f"max imag = {np.max(np.abs(obs.coeffs.imag)):.3e}"
         )
-    sampler = BackendSamplerV2(backend=backend)
     groups = _pauli_basis_groups(obs)
     total: float = 0.0
     n = qc.num_qubits
@@ -405,30 +597,31 @@ def _eval_observable_with_m3(
             continue
 
         meas_circuit = _build_basis_circuit(qc, basis_label, physical_qubits)
-        meas_circuit = _retranslate_to_basis(meas_circuit, backend)
-        result = sampler.run([(meas_circuit,)], shots=shots).result()
-        counts = result[0].data.m3_meas.get_counts()
-        qd = m3.apply_correction(counts, qubits=physical_qubits)
+        if isa_backend is not None:
+            meas_circuit = _isa_basis_translate(meas_circuit, isa_backend)
+        else:
+            meas_circuit = _retranslate_to_basis(meas_circuit, mode)
+        counts = _sample_counts(mode, meas_circuit, shots, creg_name="m3_meas")
+
+        if m3 is not None:
+            qd = m3.apply_correction(counts, qubits=physical_qubits)
 
         for z_string, coeff in terms:
-            # Build the mthree expval string (length n_meas, M3/Qiskit
-            # big-endian: leftmost char = qubits[-1]). For each physical qubit
-            # q at position i in ``physical_qubits``, the Pauli on q lives at
-            # z_string[n-1-q]; we replace X/Y with Z because the basis
-            # rotation already mapped them into the Z basis.
-            chars = [
-                z_string[n - 1 - q].replace("X", "Z").replace("Y", "Z")
-                for q in reversed(physical_qubits)
-            ]
-            mthree_string = "".join(chars)
-            ev: float = float(qd.expval(mthree_string))
+            if m3 is not None:
+                chars = [
+                    z_string[n - 1 - q].replace("X", "Z").replace("Y", "Z")
+                    for q in reversed(physical_qubits)
+                ]
+                ev = float(qd.expval("".join(chars)))
+            else:
+                ev = _expval_from_counts(counts, z_string, physical_qubits, n)
             total += coeff.real * ev
 
     return total
 
 
 class MitigatedEstimator:
-    """Manual M3 + ZNE wrapper around BackendEstimatorV2 / BackendSamplerV2.
+    """Manual M3 + ZNE wrapper over qiskit_ibm_runtime.SamplerV2.
 
     Quacks like a minimal EstimatorV2: exposes .run(pubs) -> _MitigatedJob
     whose .result() returns a list-indexable _MitigatedPrimitiveResult with
@@ -439,13 +632,31 @@ class MitigatedEstimator:
 
     def __init__(
         self,
-        backend: BackendV2 | AerSimulator,
+        mode: Any,  # BackendV2 | AerSimulator | Batch | Session
         spec: MitigationSpec,
+        m3_backend: Any = None,  # underlying BackendV2 for mthree when mode is Batch/Session
+        isa_backend: Any = None,  # concrete BackendV2 to ISA-transpile input circuits against
     ) -> None:
-        self._backend = backend
+        self._mode = mode
         self._spec = spec
+        # mthree.M3Mitigation requires a BackendV2, not a Batch/Session.  When
+        # mode is an open Batch (hardware or local-fake), pass the underlying
+        # backend explicitly via m3_backend.  Falls back to mode when None
+        # (backwards-compatible for bare AerSimulator callers).
+        self._m3_backend: Any = m3_backend if m3_backend is not None else mode
+        # ISA transpile target.  When set, run() full-transpiles each logical input
+        # circuit (routing + basis + layout) before capturing physical_qubits and
+        # folding.  Fallback chain: isa_backend -> m3_backend -> mode.
+        self._isa_backend: Any = isa_backend if isa_backend is not None else self._m3_backend
         self._m3: Any = None  # lazy; set on first run() if spec.m3
         self._m3_qubits: list[int] | None = None  # qubit list at calibration time
+        # Physical layout pinned on the first ISA transpile and reused as
+        # ``initial_layout`` for every subsequent input, so all per-Pauli-term
+        # Hadamard circuits in one sweep map to the SAME physical qubits.  Their
+        # 2-qubit entangling structure is identical across terms (only 1-qubit
+        # gates differ), so a fixed layout keeps physical_qubits constant and the
+        # M3 calibration (done once) valid across the whole operator.
+        self._isa_layout: list[int] | None = None
 
     def _calibrate_m3(self, physical_qubits: list[int]) -> None:
         """Calibrate M3 on the first .run() call (lazy, cached).
@@ -459,7 +670,7 @@ class MitigatedEstimator:
         """
         import mthree  # lazy import — callers not needing M3 pay no cost
 
-        m3 = mthree.M3Mitigation(system=self._backend)
+        m3 = mthree.M3Mitigation(system=self._m3_backend)
         try:
             m3.cals_from_system(
                 qubits=physical_qubits,
@@ -488,6 +699,52 @@ class MitigatedEstimator:
                     "by MitigatedEstimator. Bind parameters before calling .run()."
                 )
             qc, obs = pub[0], pub[1]
+            # Hardware path: ISA-transpile a logical (layout-None) input so routing,
+            # basis, and layout are fixed before we capture physical_qubits and fold.
+            # An already-ISA input (layout set) is left untouched.  Bare-Aer callers
+            # (no real target) are unaffected.
+            isa_dev = (
+                _unwrap_backendv2(self._isa_backend)
+                if self._isa_backend is not None
+                else None
+            )
+            # ISA machinery engages only when the EXECUTION target (mode) enforces
+            # ISA — a qiskit_ibm_runtime Batch/Session, which exposes the device as
+            # ``._backend``.  A permissive AerSimulator (even ``.from_backend``,
+            # which carries a coupling_map from the snapshot) accepts non-ISA
+            # circuits, so it stays on the original sim path — preserving its
+            # even/non-integer ZNE-factor support.  Keying off the transpile target's
+            # coupling_map instead would wrongly route a from_backend sim into the
+            # odd-only ISA fold (see test_hadamard_with_mitigated_estimator_fakemarrakesh).
+            isa_active = getattr(self._mode, "_backend", None) is not None
+            if qc.layout is None and isa_active:
+                if self._isa_layout is None:
+                    # First ISA transpile in this estimator: let the transpiler
+                    # choose the layout, then pin it for all later circuits.
+                    qc = transpile(
+                        qc,
+                        backend=isa_dev,
+                        optimization_level=1,
+                        seed_transpiler=_ISA_TRANSPILE_SEED,
+                        translation_method="translator",
+                    )
+                    self._isa_layout = list(qc.layout.final_index_layout())
+                else:
+                    # Reuse the pinned layout so physical_qubits is identical to the
+                    # first circuit's — keeps M3 calibration valid across all the
+                    # per-Pauli-term Hadamard circuits of one operator.
+                    qc = transpile(
+                        qc,
+                        backend=isa_dev,
+                        initial_layout=self._isa_layout,
+                        optimization_level=1,
+                        seed_transpiler=_ISA_TRANSPILE_SEED,
+                        translation_method="translator",
+                    )
+            # After ISA transpile the circuit spans the full device width; widen the
+            # observable to match so per-Pauli indexing in _build_basis_circuit is valid.
+            if qc.layout is not None and obs.num_qubits != qc.num_qubits:
+                obs = obs.apply_layout(qc.layout)
             physical_qubits = _physical_qubits_from_layout(qc)
 
             if spec.m3:
@@ -501,32 +758,36 @@ class MitigatedEstimator:
                     )
 
             if not spec.m3 and not spec.zne:
-                # (F, F) — no_mit: thin shim over BackendEstimatorV2
-                precision = 1.0 / math.sqrt(spec.shots)
-                est = BackendEstimatorV2(
-                    backend=self._backend,
-                    options={"default_precision": precision},
+                # (F, F) — no_mit: counts-based raw expectation via SamplerV2
+                evs = _eval_observable_from_counts(
+                    qc, obs, self._mode, None, spec.shots, physical_qubits,
+                    isa_backend=isa_dev if isa_active else None,
                 )
-                raw_result = est.run([(qc, obs)]).result()
+                coeff_norm = float(np.sqrt(np.sum(np.abs(obs.coeffs) ** 2)))
+                stds = coeff_norm / math.sqrt(spec.shots)
                 pub_result = _MitigatedPubResult(
-                    data=_MitigatedData(
-                        evs=float(raw_result[0].data.evs),
-                        stds=float(raw_result[0].data.stds),
-                    ),
+                    data=_MitigatedData(evs=evs, stds=stds),
                     metadata={"spec": spec.name, "path": "no_mit"},
                 )
 
             elif not spec.m3 and spec.zne:
-                # (F, T) — zne only
+                # (F, T) — zne only, counts-based (decoupled from standalone run_manual_zne)
                 assert spec.zne_noise_factors is not None
                 assert spec.zne_extrapolator is not None
-                base_est = BackendEstimatorV2(backend=self._backend)
-                extrapolated, raw_values = run_manual_zne(
-                    base_est, qc, obs,
-                    spec.zne_noise_factors,
-                    spec.zne_extrapolator,
-                    spec.shots,
-                    backend=self._backend,
+                raw_values = []
+                for c in spec.zne_noise_factors:
+                    if isa_active:
+                        folded = _fold_circuit_global_isa(qc, c, isa_dev)
+                    else:
+                        folded = _fold_circuit_global(qc, c)
+                        folded = _retranslate_to_basis(folded, self._mode)
+                    val = _eval_observable_from_counts(
+                        folded, obs, self._mode, None, spec.shots, physical_qubits,
+                        isa_backend=isa_dev if isa_active else None,
+                    )
+                    raw_values.append(val)
+                extrapolated = _extrapolate_zne(
+                    spec.zne_noise_factors, raw_values, spec.zne_extrapolator
                 )
                 stds = float(np.std(raw_values) / math.sqrt(len(raw_values)))
                 pub_result = _MitigatedPubResult(
@@ -542,8 +803,9 @@ class MitigatedEstimator:
 
             elif spec.m3 and not spec.zne:
                 # (T, F) — m3 only
-                evs = _eval_observable_with_m3(
-                    qc, obs, self._backend, self._m3, spec.shots, physical_qubits
+                evs = _eval_observable_from_counts(
+                    qc, obs, self._mode, self._m3, spec.shots, physical_qubits,
+                    isa_backend=isa_dev if isa_active else None,
                 )
                 # Proxy std: shot-noise floor = sqrt(sum(coeff^2)) / sqrt(shots)
                 coeff_norm = float(np.sqrt(np.sum(np.abs(obs.coeffs) ** 2)))
@@ -563,10 +825,14 @@ class MitigatedEstimator:
                 assert spec.zne_extrapolator is not None
                 raw_values = []
                 for c in spec.zne_noise_factors:
-                    folded = _fold_circuit_global(qc, c)
-                    folded = _retranslate_to_basis(folded, self._backend)
-                    val = _eval_observable_with_m3(
-                        folded, obs, self._backend, self._m3, spec.shots, physical_qubits
+                    if isa_active:
+                        folded = _fold_circuit_global_isa(qc, c, isa_dev)
+                    else:
+                        folded = _fold_circuit_global(qc, c)
+                        folded = _retranslate_to_basis(folded, self._mode)
+                    val = _eval_observable_from_counts(
+                        folded, obs, self._mode, self._m3, spec.shots, physical_qubits,
+                        isa_backend=isa_dev if isa_active else None,
                     )
                     raw_values.append(val)
                 extrapolated = _extrapolate_zne(
@@ -591,18 +857,31 @@ class MitigatedEstimator:
 
 
 def make_mitigated_estimator(
-    backend_or_sim: BackendV2 | AerSimulator,
+    mode: Any,
     spec: MitigationSpec,
+    m3_backend: Any = None,
+    isa_backend: Any = None,
 ) -> MitigatedEstimator:
     """Construct a MitigatedEstimator for the given backend and mitigation spec.
 
     Parameters
     ----------
-    backend_or_sim:
-        AerSimulator (local) or IBMBackend (hardware).
+    mode:
+        AerSimulator (local), IBMBackend (hardware), or an open
+        qiskit_ibm_runtime.Batch / Session. Passed directly to
+        ``SamplerV2(mode=mode)`` for all shot-based evaluations.
     spec:
         MitigationSpec from siam_vqe.mitigation; controls which mitigation
         branch is taken (none / ZNE / M3 / M3+ZNE).
+    m3_backend:
+        Underlying BackendV2 to pass to mthree.M3Mitigation.  Required when
+        ``mode`` is a Batch or Session (mthree requires a BackendV2, not a
+        Batch).  When None, ``mode`` is used directly (backwards-compatible
+        for bare AerSimulator callers).
+    isa_backend:
+        Concrete BackendV2 to ISA-transpile each input circuit against (routing +
+        basis + layout) before folding/measurement.  Required for an opaque Batch on
+        real hardware.  Falls back to ``m3_backend`` then ``mode`` when None.
 
     Returns
     -------
@@ -623,4 +902,241 @@ def make_mitigated_estimator(
             f"{spec.zne_extrapolator!r} and zne_noise_factors={spec.zne_noise_factors!r}. "
             "Both must be set when zne=True."
         )
-    return MitigatedEstimator(backend=backend_or_sim, spec=spec)
+    return MitigatedEstimator(
+        mode=mode, spec=spec, m3_backend=m3_backend, isa_backend=isa_backend
+    )
+
+
+def _hadamard_circuit_for_pauli(
+    qc_left: QuantumCircuit,
+    qc_right: QuantumCircuit,
+    pauli_label: str,
+    imag: bool,
+) -> QuantumCircuit:
+    """Build a Hadamard-test circuit measuring ⟨0|U_L† · P · U_R|0⟩ on ancilla.
+
+    Real part: H on anc → controlled-V → H on anc → measure anc.
+    Imag part: H on anc → controlled-V → S† on anc → H on anc → measure anc.
+
+    Where V = U_L† · P · U_R, applied to the system qubits.
+    """
+    n_sys = qc_left.num_qubits
+    assert qc_right.num_qubits == n_sys, "left and right circuits must have same width"
+
+    qc = QuantumCircuit(n_sys + 1, 1)  # qubit 0 = ancilla
+    sys_qubits = list(range(1, n_sys + 1))
+
+    qc.h(0)
+
+    v_subcirc = QuantumCircuit(n_sys)
+    v_subcirc.compose(qc_right, qubits=range(n_sys), inplace=True)
+    for q_idx, p in enumerate(pauli_label[::-1]):
+        if p == "X":
+            v_subcirc.x(q_idx)
+        elif p == "Y":
+            v_subcirc.y(q_idx)
+        elif p == "Z":
+            v_subcirc.z(q_idx)
+    v_subcirc.compose(qc_left.inverse(), qubits=range(n_sys), inplace=True)
+    controlled_v = v_subcirc.to_gate().control(1)
+    qc.append(controlled_v, [0, *sys_qubits])
+
+    if imag:
+        qc.sdg(0)
+
+    qc.h(0)
+    qc.measure(0, 0)
+    return qc
+
+
+def compute_hadamard_test(
+    *,
+    qc_left: QuantumCircuit,
+    qc_right: QuantumCircuit,
+    operator: SparsePauliOp,
+    shots: int = 8192,
+    mode: Any = None,
+    isa_backend: Any = None,  # if set, full-transpile each Hadamard circuit to this backend's ISA
+) -> tuple[float, float, float, float]:
+    """Estimate ⟨ψ_left | O | ψ_right⟩ via Hadamard-test ancilla circuits.
+
+    ψ_left = U_L|0⟩, ψ_right = U_R|0⟩ where U_L = qc_left, U_R = qc_right.
+
+    Each Pauli term P_k of `operator` is Hadamard-tested individually
+    for both Re and Im, then linearly combined with the (complex) coefficient.
+
+    Returns (Re, Im, stderr_Re, stderr_Im).
+
+    Parameters
+    ----------
+    mode:
+        Anything accepted by ``SamplerV2(mode=...)``: a BackendV2 (local Aer /
+        fake backend) or an open Batch/Session (hardware). Defaults to
+        ``AerSimulator()`` when None.
+    isa_backend:
+        When provided, each Hadamard circuit is full-transpiled to this
+        backend's ISA via ``qiskit.transpile`` (optimization_level=1) before
+        submission.  Required for real IBM backends and Batch/Session contexts
+        that enforce ISA (including local Batch(FakeMarrakesh)).  When None,
+        falls back to ``_retranslate_to_basis`` (BasisTranslator-only, no
+        routing) which works for bare AerSimulator but NOT for Batch/real hw.
+
+    Note: this implementation issues a UserWarning if `operator` is detected
+    to be anti-Hermitian (Observation #20 — anti-Hermitian operators in
+    a commutator-metric pathway force ⟨[T†,T]⟩ = 0 identically; callers
+    using this for qEOM matrices should use non-antisymmetric raising
+    operators).
+    """
+    import warnings
+
+    if mode is None:
+        mode = AerSimulator()
+
+    op_dense = operator.to_matrix()
+    if np.allclose(op_dense, -op_dense.conj().T, atol=1e-10) and not np.allclose(op_dense, 0):
+        warnings.warn(
+            "Operator is anti-Hermitian; if used in a commutator-metric "
+            "qEOM pathway, ⟨[T†,T]⟩ will be identically zero. See Observation #20.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    total_re = 0.0
+    total_im = 0.0
+    var_re = 0.0
+    var_im = 0.0
+
+    for pauli, coeff in zip(operator.paulis, operator.coeffs, strict=True):
+        label = pauli.to_label()
+        c = complex(coeff)
+
+        qc_re = _hadamard_circuit_for_pauli(qc_left, qc_right, label, imag=False)
+        # Hardware (Batch/real backend): full-transpile to ISA. Local Aer/fake:
+        # BasisTranslator only — Aer accepts the unitary controlled-V gate.
+        # translation_method="translator" pins the universal translator: real
+        # IBM backends advertise the "ibm_dynamic_circuits" plugin as preferred,
+        # but it requires the qiskit-ibm-transpiler extra (not installed). See
+        # Task 5/6 review and hardware.transpile_for_backend (same pin).
+        if isa_backend is not None:
+            qc_re_t = transpile(
+                qc_re, backend=isa_backend, optimization_level=1,
+                seed_transpiler=1234, translation_method="translator",
+            )
+        else:
+            qc_re_t = _retranslate_to_basis(qc_re, mode)
+        counts_re = _sample_counts(mode, qc_re_t, shots, creg_name=qc_re_t.cregs[0].name)
+        p0_re = counts_re.get("0", 0) / shots
+        re_pauli = 2 * p0_re - 1
+        var_re_pauli = (1 - re_pauli**2) / shots
+
+        qc_im = _hadamard_circuit_for_pauli(qc_left, qc_right, label, imag=True)
+        if isa_backend is not None:
+            qc_im_t = transpile(
+                qc_im, backend=isa_backend, optimization_level=1,
+                seed_transpiler=1234, translation_method="translator",
+            )
+        else:
+            qc_im_t = _retranslate_to_basis(qc_im, mode)
+        counts_im = _sample_counts(mode, qc_im_t, shots, creg_name=qc_im_t.cregs[0].name)
+        p0_im = counts_im.get("0", 0) / shots
+        im_pauli = 2 * p0_im - 1
+        var_im_pauli = (1 - im_pauli**2) / shots
+
+        total_re += c.real * re_pauli - c.imag * im_pauli
+        total_im += c.real * im_pauli + c.imag * re_pauli
+        var_re += c.real**2 * var_re_pauli + c.imag**2 * var_im_pauli
+        var_im += c.imag**2 * var_re_pauli + c.real**2 * var_im_pauli
+
+    return total_re, total_im, math.sqrt(var_re), math.sqrt(var_im)
+
+
+def _eval_via_mitigated_estimator(
+    mit_est: MitigatedEstimator,
+    circuit: QuantumCircuit,
+    observable: SparsePauliOp,
+) -> tuple[float, float]:
+    """Wrap MitigatedEstimator.run for a single (circuit, observable) tuple.
+
+    Shot count is taken from ``mit_est``'s MitigationSpec — the underlying API
+    does not accept a per-call shots argument (parameterised PUBs are not yet
+    supported either; see MitigatedEstimator.run).
+
+    Returns (expectation, variance).
+    """
+    job = mit_est.run([(circuit, observable)])
+    result = job.result()
+    pub = result[0]
+    value = float(pub.data.evs)
+    std = float(pub.data.stds)
+    return value, std**2
+
+
+def compute_hadamard_test_mitigated(
+    *,
+    qc_left: QuantumCircuit,
+    qc_right: QuantumCircuit,
+    operator: SparsePauliOp,
+    shots: int = 4096,  # informational; spec.shots controls actual shots
+    mitigated_estimator: MitigatedEstimator,
+) -> tuple[float, float, float, float]:
+    """Hadamard test ⟨ψ_left | O | ψ_right⟩ under M3+ZNE mitigation.
+
+    For each Pauli term, builds the Hadamard circuit (Re or Im) and estimates
+    ⟨Z_anc⟩ on the ancilla via ``mitigated_estimator.run``. ⟨Z_anc⟩ = 2·p(0) − 1
+    equals the Re or Im component (matching the math from
+    ``compute_hadamard_test``).
+
+    The actual shot count is taken from
+    ``mitigated_estimator._spec.shots`` — the wrapper's ``shots`` argument is
+    accepted for symmetry with ``compute_hadamard_test`` but is informational
+    only on the mitigated path. (MitigatedEstimator.run does not currently
+    accept a per-PUB shots override.)
+
+    Honors Observation #20 via the same anti-Hermitian warning as
+    ``compute_hadamard_test``.
+    """
+    import warnings
+
+    op_dense = operator.to_matrix()
+    if np.allclose(op_dense, -op_dense.conj().T, atol=1e-10) and not np.allclose(op_dense, 0):
+        warnings.warn(
+            "Operator is anti-Hermitian; if used in a commutator-metric "
+            "qEOM pathway, ⟨[T†,T]⟩ will be identically zero. See Observation #20.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    n_sys = qc_left.num_qubits
+    # Hadamard-test circuit has n_sys + 1 qubits; ancilla is qubit 0.
+    # Qiskit big-endian Pauli string: rightmost char = qubit 0. So Z on ancilla
+    # with I on the n_sys system qubits = "I" * n_sys + "Z".
+    z_anc_label = "I" * n_sys + "Z"
+    z_anc_op = SparsePauliOp.from_list([(z_anc_label, 1.0)])
+
+    total_re = 0.0
+    total_im = 0.0
+    var_re = 0.0
+    var_im = 0.0
+
+    for pauli, coeff in zip(operator.paulis, operator.coeffs, strict=True):
+        label = pauli.to_label()
+        c = complex(coeff)
+
+        qc_re = _hadamard_circuit_for_pauli(qc_left, qc_right, label, imag=False)
+        qc_re.remove_final_measurements()
+        qc_im = _hadamard_circuit_for_pauli(qc_left, qc_right, label, imag=True)
+        qc_im.remove_final_measurements()
+
+        re_pauli, var_re_pauli = _eval_via_mitigated_estimator(
+            mitigated_estimator, qc_re, z_anc_op
+        )
+        im_pauli, var_im_pauli = _eval_via_mitigated_estimator(
+            mitigated_estimator, qc_im, z_anc_op
+        )
+
+        total_re += c.real * re_pauli - c.imag * im_pauli
+        total_im += c.real * im_pauli + c.imag * re_pauli
+        var_re += c.real**2 * var_re_pauli + c.imag**2 * var_im_pauli
+        var_im += c.imag**2 * var_re_pauli + c.real**2 * var_im_pauli
+
+    return total_re, total_im, math.sqrt(var_re), math.sqrt(var_im)
