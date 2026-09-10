@@ -460,6 +460,230 @@ def check_resilience_guardrail(
     )
 
 
+def compare_mitigations(
+    results: dict[str, dict[str, Any]],
+    ed_energy: float,
+    title: str = "L2 NiO e_g² — mitigation comparison",
+) -> Figure:
+    """Bar chart of per-config mean energy +/- std with ED reference line.
+
+    Parameters
+    ----------
+    results : ordered mapping spec.name → {"energy": float, "std": float, ...}.
+        Per-config JSONs from the sweep driver. Entries with ``status="error"``
+        (or any entry missing ``energy``/``std`` keys) are silently skipped.
+    ed_energy : reference energy drawn as a horizontal dashed line.
+    title : figure title.
+
+    Returns
+    -------
+    matplotlib Figure. The caller is responsible for ``fig.savefig(...)`` or display.
+    """
+    ok_labels: list[str] = [k for k in results if results[k].get("status") != "error" and "energy" in results[k]]
+    energies = [results[k]["energy"] for k in ok_labels]
+    stds = [results[k]["std"] for k in ok_labels]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = np.arange(len(ok_labels))
+    ax.bar(x, energies, yerr=stds, capsize=4, color="#3a6df0", alpha=0.8)
+    ax.axhline(
+        ed_energy,
+        color="black",
+        linestyle="--",
+        linewidth=1,
+        label=f"ED = {ed_energy:.4f} eV",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(ok_labels, rotation=30, ha="right")
+    ax.set_ylabel("⟨H⟩ (eV)")
+    ax.set_title(title)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    return fig
+
+
+def plot_zne_extrapolation_curves(
+    diagnostics: dict[str, dict[str, Any]],
+    title: str = "ZNE extrapolation per config",
+) -> Figure:
+    """Per-ZNE-config diagnostic: mean energy as a function of noise factor c.
+
+    Parameters
+    ----------
+    diagnostics : dict spec.name -> {"noise_factors": [...], "raw_values": [...],
+        "extrapolator": str, "extrapolated": float}.
+    title : figure suptitle.
+
+    Returns
+    -------
+    matplotlib Figure. The caller is responsible for ``fig.savefig(...)`` or display.
+    """
+    n = len(diagnostics)
+    if n == 0:
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "no ZNE diagnostics", ha="center", va="center")
+        return fig
+
+    ncols = min(3, n)
+    nrows = (n + ncols - 1) // ncols
+    fig, axes_arr = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows), squeeze=False)
+    axes: list[Axes] = axes_arr.flatten().tolist()
+
+    for ax, (name, diag) in zip(axes, diagnostics.items(), strict=False):
+        factors = np.array(diag["noise_factors"])
+        values = np.array(diag["raw_values"])
+        extrap = diag["extrapolated"]
+        method = diag.get("extrapolator", "linear")
+
+        ax.scatter(factors, values, c="C0", s=40, label="<H>(c)")
+
+        c_fine = np.linspace(0, factors.max() * 1.1, 100)
+        y_fit: np.ndarray
+        if method == "linear":
+            coeffs = np.polyfit(factors, values, 1)
+            y_fit = np.polyval(coeffs, c_fine)
+        elif method == "polynomial_degree_3":
+            deg = min(3, len(factors) - 1)
+            coeffs = np.polyfit(factors, values, deg)
+            y_fit = np.polyval(coeffs, c_fine)
+        elif method == "exponential":
+            from scipy.optimize import curve_fit
+
+            def expdecay(xx: np.ndarray, a: float, b: float, k: float) -> np.ndarray:
+                return a + b * np.exp(-k * xx)
+
+            try:
+                popt, _ = curve_fit(
+                    expdecay,
+                    factors,
+                    values,
+                    p0=[values[-1], values[0] - values[-1], 0.5],
+                    maxfev=5000,
+                )
+                y_fit = expdecay(c_fine, *popt)
+            except (RuntimeError, ValueError):
+                y_fit = np.full_like(c_fine, np.nan)
+        else:
+            y_fit = np.full_like(c_fine, np.nan)
+
+        ax.plot(c_fine, y_fit, "C0--", lw=1, alpha=0.7, label=f"{method} fit")
+        ax.scatter([0], [extrap], c="C3", marker="*", s=120, label=f"extrap -> {extrap:.3f}")
+        ax.set_xlabel("noise factor c")
+        ax.set_ylabel("⟨H⟩")
+        ax.set_title(name)
+        ax.legend(loc="best", fontsize=8)
+        ax.grid(alpha=0.3)
+
+    for ax in axes[n:]:
+        ax.set_visible(False)
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Task 15: Layer 6 (stack monotonicity) + Layer 7 (mitigation effectiveness)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StackMonotonicityReport:
+    """Validation layer 6 (Phase 3, 2-tier): |E_M3+ZNE - E_ED| <= |E_M3 - E_ED|."""
+
+    passed: bool
+    gap_m3: float
+    gap_m3_zne: float
+    notes: str
+
+
+def check_stack_monotonicity(
+    e_ed: float,
+    e_m3: float,
+    e_m3_zne: float,
+) -> StackMonotonicityReport:
+    """Layer 6 (Phase 3): stack monotonicity for M3 -> M3+ZNE.
+
+    Fails if adding ZNE on top of M3 makes the gap to ED bigger.
+    Pass-or-flag; not a hard gate (spec §6).
+    """
+    gap_m3 = abs(e_m3 - e_ed)
+    gap_m3_zne = abs(e_m3_zne - e_ed)
+    passed = gap_m3_zne <= gap_m3 + 1e-12
+    notes = (
+        "M3+ZNE improves over M3 alone"
+        if passed
+        else f"ZNE on top of M3 regressed by {gap_m3_zne - gap_m3:.4f} eV"
+    )
+    return StackMonotonicityReport(
+        passed=passed, gap_m3=gap_m3, gap_m3_zne=gap_m3_zne, notes=notes
+    )
+
+
+@dataclass(frozen=True)
+class MitigationEffectivenessReport:
+    """Validation layer 7 (Phase 3 headline): at least one config has
+    |E_mit - E_ED| / |E_unmit - E_ED| < 1.0."""
+
+    passed: bool
+    best_config: str
+    best_ratio: float
+    per_config_ratio: dict[str, float]
+
+
+def check_mitigation_effectiveness(
+    results: dict[str, dict[str, Any]],
+    ed_energy: float,
+    no_mit_key: str = "no_mit",
+) -> MitigationEffectivenessReport:
+    """Layer 7: hard gate. Mitigation effectiveness ratio < 1 for the best config.
+
+    Parameters
+    ----------
+    results : per-config result dict from the sweep.
+    ed_energy : reference energy (scipy ED).
+    no_mit_key : name of the baseline (no-mitigation) config in results.
+    """
+    if no_mit_key not in results or results[no_mit_key].get("status") == "error":
+        raise ValueError(
+            f"check_mitigation_effectiveness requires a successful {no_mit_key!r} config in results."
+        )
+    e_unmit = results[no_mit_key]["energy"]
+    gap_unmit = abs(e_unmit - ed_energy)
+    if gap_unmit == 0:
+        # Edge case: no-mit was perfect; anything else is at best as good.
+        ratio_dict: dict[str, float] = {
+            name: 0.0 if name == no_mit_key else float("inf") for name in results
+        }
+        return MitigationEffectivenessReport(
+            passed=True,
+            best_config=no_mit_key,
+            best_ratio=0.0,
+            per_config_ratio=ratio_dict,
+        )
+
+    ratios: dict[str, float] = {}
+    for name, res in results.items():
+        if res.get("status") == "error" or name == no_mit_key:
+            continue
+        gap = abs(res["energy"] - ed_energy)
+        ratios[name] = gap / gap_unmit
+
+    if not ratios:
+        return MitigationEffectivenessReport(
+            passed=False,
+            best_config="(none)",
+            best_ratio=float("inf"),
+            per_config_ratio={},
+        )
+    best_config = min(ratios, key=lambda k: ratios[k])
+    best_ratio = ratios[best_config]
+    return MitigationEffectivenessReport(
+        passed=bool(best_ratio < 1.0),
+        best_config=best_config,
+        best_ratio=best_ratio,
+        per_config_ratio=ratios,
+    )
 # ---------------------------------------------------------------------------
 # Phase 4 L3 layer checkers: Layer 2 (overlap) + Layer 5 (observables)
 # ---------------------------------------------------------------------------

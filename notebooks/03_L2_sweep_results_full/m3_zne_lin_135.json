@@ -1,0 +1,34 @@
+{
+  "status": "ok",
+  "energy": -85.83498141447298,
+  "std": 5.9657685130030496,
+  "metadata": {
+    "spec": "m3_zne_lin_135",
+    "path": "manual_m3_plus_zne",
+    "zne_raw_values": [
+      -81.19946019800598,
+      -64.18636512441228,
+      -56.4637332196102
+    ],
+    "zne_noise_factors": [
+      1.0,
+      3.0,
+      5.0
+    ],
+    "zne_extrapolator": "linear",
+    "m3_cal_shots": 4096
+  },
+  "walltime_s": 441.20118425396504,
+  "spec": {
+    "name": "m3_zne_lin_135",
+    "m3": true,
+    "zne": true,
+    "zne_extrapolator": "linear",
+    "zne_noise_factors": [
+      1.0,
+      3.0,
+      5.0
+    ],
+    "shots": 8192
+  }
+}

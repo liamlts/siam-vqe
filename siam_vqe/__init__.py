@@ -66,6 +66,7 @@ from siam_vqe.hamiltonian_l3 import (
 )
 from siam_vqe.hardware import make_runtime_estimator, pick_backend, transpile_for_backend
 from siam_vqe.mappings import to_qubit_op
+from siam_vqe.mitigation import MitigationSpec, make_default_grid
 from siam_vqe.noise import make_noisy_estimator
 from siam_vqe.observables_l3 import (
     compute_reference_observables,
@@ -81,7 +82,7 @@ from siam_vqe.qeom import (
     solve_qeom_struct,
 )
 from siam_vqe.reference_ed import EDResult, exact_diag
-from siam_vqe.reference_edrixs import compute_l1_levels
+from siam_vqe.reference_edrixs import L2Levels, compute_l1_levels, compute_l2_levels
 from siam_vqe.reference_l3 import (
     L3Reference,
     compute_l3_reference,
@@ -122,8 +123,10 @@ __all__ = [
     "EnergyMatchReport",
     "ExpressivityReport",
     "HFState",
+    "L2Levels",
     "L3Params",
     "L3Reference",
+    "MitigationSpec",
     "MultiObservableReport",
     "MultiStartReport",
     "MultistartResult",
@@ -158,6 +161,7 @@ __all__ = [
     "check_state_overlap",
     "compare_energies",
     "compute_l1_levels",
+    "compute_l2_levels",
     "compute_l3_reference",
     "compute_l3_xas_reference",
     "compute_reference_observables",
@@ -175,6 +179,7 @@ __all__ = [
     "lift_tapered_to_full_sector",
     "load_l3_reference",
     "lorentzian",
+    "make_default_grid",
     "make_l3_observables",
     "make_noisy_estimator",
     "make_runtime_estimator",

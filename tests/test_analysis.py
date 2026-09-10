@@ -140,6 +140,7 @@ from siam_vqe.analysis import (  # noqa: E402
     ResilienceGuardrailReport,
     check_resilience_guardrail,
     compare_energies,
+    compare_mitigations,
 )
 
 
@@ -289,6 +290,118 @@ def test_check_observable_agreement_multi_threads_num_particles(
 
 
 # ---------------------------------------------------------------------------
+# Task 13: compare_mitigations
+# ---------------------------------------------------------------------------
+
+
+def test_compare_mitigations_returns_figure() -> None:
+    results = {
+        "no_mit": {"energy": -5.2, "std": 0.1},
+        "m3_only": {"energy": -5.5, "std": 0.08},
+        "m3_zne_lin_135": {"energy": -5.65, "std": 0.05},
+    }
+    fig = compare_mitigations(results, ed_energy=-5.7)
+    assert fig is not None
+    assert isinstance(fig, Figure)
+    # Sanity: figure has at least one axes with at least 3 bars
+    axes = fig.get_axes()
+    assert len(axes) >= 1
+    bars = [p for p in axes[0].patches if hasattr(p, "get_height")]
+    assert len(bars) >= 3
+
+    # Errored configs must be skipped — only ok configs contribute bars.
+    results_with_error = {
+        "no_mit": {"energy": -5.2, "std": 0.1},
+        "bad_config": {"status": "error", "error_type": "RuntimeError", "error_msg": "kaboom"},
+        "m3_zne_lin_135": {"energy": -5.65, "std": 0.05},
+    }
+    fig2 = compare_mitigations(results_with_error, ed_energy=-5.7)
+    bars2 = [p for p in fig2.get_axes()[0].patches if hasattr(p, "get_height")]
+    # Only 2 ok configs → 2 bars (errored config skipped).
+    assert len(bars2) == 2
+    plt.close(fig)
+    plt.close(fig2)
+
+
+# ---------------------------------------------------------------------------
+# Task 14: plot_zne_extrapolation_curves
+# ---------------------------------------------------------------------------
+
+
+def test_plot_zne_extrapolation_curves_returns_figure() -> None:
+    from siam_vqe.analysis import plot_zne_extrapolation_curves
+
+    diagnostics = {
+        "m3_zne_lin_135": {
+            "noise_factors": [1.0, 3.0, 5.0],
+            "raw_values": [-5.0, -4.0, -3.0],
+            "extrapolator": "linear",
+            "extrapolated": -5.5,
+        },
+        "m3_zne_exp_135": {
+            "noise_factors": [1.0, 3.0, 5.0],
+            "raw_values": [-5.0, -4.2, -3.8],
+            "extrapolator": "exponential",
+            "extrapolated": -5.3,
+        },
+    }
+    fig = plot_zne_extrapolation_curves(diagnostics)
+    assert fig is not None
+    axes = fig.get_axes()
+    assert len(axes) >= 2
+
+    # Each visible axes should have at least 2 collections (scatter + extrap star).
+    visible_axes = [ax for ax in axes if ax.get_visible()]
+    for ax in visible_axes:
+        assert len(ax.collections) >= 2, (
+            f"Expected >= 2 scatter collections in {ax.get_title()}, got {len(ax.collections)}"
+        )
+
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Task 15: Layer 6 (stack monotonicity) + Layer 7 (mitigation effectiveness)
+# ---------------------------------------------------------------------------
+
+
+def test_check_stack_monotonicity_passes_when_m3_zne_closer() -> None:
+    from siam_vqe.analysis import check_stack_monotonicity
+
+    report = check_stack_monotonicity(e_ed=-5.7, e_m3=-5.6, e_m3_zne=-5.65)
+    assert report.passed
+
+
+def test_check_stack_monotonicity_fails_when_zne_worse() -> None:
+    from siam_vqe.analysis import check_stack_monotonicity
+
+    report = check_stack_monotonicity(e_ed=-5.7, e_m3=-5.65, e_m3_zne=-5.6)
+    assert not report.passed
+
+
+def test_check_mitigation_effectiveness_pass_when_any_mit_helps() -> None:
+    from siam_vqe.analysis import check_mitigation_effectiveness
+
+    results = {
+        "no_mit": {"energy": -5.0, "std": 0.0},
+        "m3_only": {"energy": -5.5, "std": 0.0},
+        "m3_zne_lin_135": {"energy": -5.6, "std": 0.0},
+    }
+    report = check_mitigation_effectiveness(results, ed_energy=-5.7)
+    assert report.passed
+    assert report.best_config == "m3_zne_lin_135"
+
+
+def test_check_mitigation_effectiveness_fail_when_no_mit_helps() -> None:
+    from siam_vqe.analysis import check_mitigation_effectiveness
+
+    results = {
+        "no_mit": {"energy": -5.0, "std": 0.0},
+        "m3_only": {"energy": -4.5, "std": 0.0},
+        "m3_zne_lin_135": {"energy": -4.0, "std": 0.0},
+    }
+    report = check_mitigation_effectiveness(results, ed_energy=-5.7)
+    assert not report.passed
 # Tasks 22-23: L3 layer checkers (Layer 2, 4, 5, 6)
 # ---------------------------------------------------------------------------
 

@@ -1,0 +1,34 @@
+{
+  "status": "ok",
+  "energy": -94.26155200426949,
+  "std": 6.131317649227064,
+  "metadata": {
+    "spec": "m3_zne_poly3_135",
+    "path": "manual_m3_plus_zne",
+    "zne_raw_values": [
+      -81.6874494131041,
+      -64.01778677711575,
+      -56.31951420291739
+    ],
+    "zne_noise_factors": [
+      1.0,
+      3.0,
+      5.0
+    ],
+    "zne_extrapolator": "polynomial_degree_3",
+    "m3_cal_shots": 4096
+  },
+  "walltime_s": 392.5606512069935,
+  "spec": {
+    "name": "m3_zne_poly3_135",
+    "m3": true,
+    "zne": true,
+    "zne_extrapolator": "polynomial_degree_3",
+    "zne_noise_factors": [
+      1.0,
+      3.0,
+      5.0
+    ],
+    "shots": 8192
+  }
+}

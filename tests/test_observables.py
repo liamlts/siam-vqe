@@ -129,3 +129,60 @@ def test_observables_l1_double_occ_decreases_with_U() -> None:
         _, vecs = np.linalg.eigh(h)
         docc_values.append(complex(vecs[:, 0].conj() @ docc_matrix @ vecs[:, 0]).real)
     assert docc_values[0] > docc_values[1] > docc_values[2]
+
+
+def test_observables_l2_keys_and_shapes() -> None:
+    from siam_vqe.hamiltonian import observables_l2
+    obs = observables_l2()
+    expected_keys = {"n_d_total", "n_p_total", "S2_d", "double_occ_d", "n_d_a_minus_n_d_b"}
+    assert set(obs.keys()) == expected_keys
+    for op in obs.values():
+        assert op.num_spin_orbitals == 8
+
+
+def test_observables_l2_n_d_total_is_4_at_full_impurity_filling() -> None:
+    """Apply n_d_total to the state with all 4 impurity modes (0,1,4,5) occupied
+    and all 4 bath modes (2,3,6,7) empty. Result should be 4.
+
+    Bit i in the basis index corresponds to mode i, so impurity modes 0,1,4,5
+    occupied ↔ bits 0,1,4,5 set ↔ 0b00110011 = 51.
+    """
+    from siam_vqe.hamiltonian import observables_l2
+    obs = observables_l2()
+    n_d = JordanWignerMapper().map(obs["n_d_total"]).to_matrix()
+    state = np.zeros(256, dtype=complex)
+    state[0b00110011] = 1.0
+    expectation = np.real(state.conj() @ n_d @ state)
+    assert expectation == pytest.approx(4.0, abs=1e-10)
+
+
+def test_observables_l2_S2_d_high_spin_state() -> None:
+    """Apply S²_d to |eg_a↑ eg_b↑ 0...0⟩ (both impurity electrons spin-up):
+    expectation should be S(S+1) = 2 (S=1)."""
+    from siam_vqe.hamiltonian import observables_l2
+    obs = observables_l2()
+    s2 = JordanWignerMapper().map(obs["S2_d"]).to_matrix()
+    state = np.zeros(256, dtype=complex)
+    state[0b0000_0011] = 1.0
+    expectation = np.real(state.conj() @ s2 @ state)
+    assert expectation == pytest.approx(2.0, abs=1e-10)
+
+
+def test_observables_l2_double_occ_d_zero_at_high_spin() -> None:
+    """Double occupancy = sum_a n_{d_a up} n_{d_a dn} is zero in the |eg_a↑ eg_b↑⟩ state."""
+    from siam_vqe.hamiltonian import observables_l2
+    obs = observables_l2()
+    do = JordanWignerMapper().map(obs["double_occ_d"]).to_matrix()
+    state = np.zeros(256, dtype=complex)
+    state[0b0000_0011] = 1.0
+    assert np.real(state.conj() @ do @ state) == pytest.approx(0.0, abs=1e-10)
+
+
+def test_observables_l2_orbital_polarization_zero_at_balanced_filling() -> None:
+    """At |eg_a↑ eg_b↑ 0...0⟩, n_a = n_b = 1, so n_d_a - n_d_b = 0."""
+    from siam_vqe.hamiltonian import observables_l2
+    obs = observables_l2()
+    op = JordanWignerMapper().map(obs["n_d_a_minus_n_d_b"]).to_matrix()
+    state = np.zeros(256, dtype=complex)
+    state[0b0000_0011] = 1.0
+    assert np.real(state.conj() @ op @ state) == pytest.approx(0.0, abs=1e-10)

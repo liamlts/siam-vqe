@@ -129,3 +129,83 @@ def test_nio_l1_anderson_half_filling_groundstate_known_values() -> None:
     # tests above are the strict gates.)
     e0 = eigvals[0]
     assert e0 == pytest.approx(-6.421966047226809, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# L2: NiO e_g² Anderson impurity model (Kanamori)
+# ---------------------------------------------------------------------------
+
+
+def test_nio_l2_kanamori_returns_fermionic_op() -> None:
+    from siam_vqe.hamiltonian import nio_l2_kanamori
+    fop = nio_l2_kanamori(
+        U=8.6, U_prime=6.85, J_H=0.875,
+        V=2.06, eps_d=1.0, eps_p=-1.0,
+    )
+    assert isinstance(fop, FermionicOp)
+    assert fop.num_spin_orbitals == 8
+
+
+def test_nio_l2_kanamori_hermitian() -> None:
+    from siam_vqe.hamiltonian import nio_l2_kanamori
+    fop = nio_l2_kanamori(
+        U=8.6, U_prime=6.85, J_H=0.875,
+        V=2.06, eps_d=1.0, eps_p=-1.0,
+    )
+    h = JordanWignerMapper().map(fop).to_matrix()
+    assert np.allclose(h, h.conj().T, atol=1e-12)
+
+
+def test_nio_l2_kanamori_decouples_at_V_zero_J_zero_Uprime_equals_U() -> None:
+    """At V=0, J_H=0, U=U': two independent single-orbital Anderson models
+    stacked. Half-filled GS = 4*eps_p (both bath orbitals filled per spin)."""
+    from siam_vqe.hamiltonian import nio_l2_kanamori
+    fop = nio_l2_kanamori(
+        U=4.0, U_prime=4.0, J_H=0.0,
+        V=0.0, eps_d=2.0, eps_p=-1.0,
+    )
+    eigvals = np.linalg.eigvalsh(JordanWignerMapper().map(fop).to_matrix())
+    # GS: 4 electrons all on bath (modes 2,3,6,7) at eps_p each = 4*(-1) = -4.
+    assert eigvals[0] == pytest.approx(-4.0, abs=1e-10)
+
+
+def test_nio_l2_kanamori_hund_atomic_limit() -> None:
+    """At V=0, U=U'=0, J_H>0, eps_p large positive (bath unoccupiable):
+    the 2-impurity-electron sector GS is the high-spin triplet with energy
+    2*eps_d - J_H. Projected into the N_imp=2 subspace to isolate the triplet
+    from competing sectors (vacuum E=0 and 4-electron E=4*eps_d-2*J_H)."""
+    from siam_vqe.hamiltonian import nio_l2_kanamori
+    J_H = 0.5
+    eps_d = 1.0
+    fop = nio_l2_kanamori(
+        U=0.0, U_prime=0.0, J_H=J_H,
+        V=0.0, eps_d=eps_d, eps_p=20.0,  # bath effectively unoccupiable
+    )
+    mapper = JordanWignerMapper()
+    h = mapper.map(fop).to_matrix()
+    # Project to N_imp=2 sector (impurity modes 0,1,4,5).
+    n_imp_op = FermionicOp(
+        {"+_0 -_0": 1.0, "+_1 -_1": 1.0, "+_4 -_4": 1.0, "+_5 -_5": 1.0},
+        num_spin_orbitals=8,
+    )
+    n_imp_mat = mapper.map(n_imp_op).to_matrix()
+    n_imp_diag = np.diag(n_imp_mat).real
+    mask = np.abs(n_imp_diag - 2.0) < 1e-8
+    h_n2 = h[np.ix_(mask, mask)]
+    eigvals_n2 = np.linalg.eigvalsh(h_n2)
+    # Triplet GS: <S²>=2, energy = 2*eps_d - J_H = 2*1.0 - 0.5 = 1.5
+    assert eigvals_n2[0] == pytest.approx(2 * eps_d - J_H, abs=1e-8)
+
+
+def test_nio_l2_kanamori_diagonal_hyb_at_J_zero() -> None:
+    """At J_H=0, U=U'=0, eps_d=eps_p=0: two independent diagonal-hyb Anderson
+    dimers. Single-particle eigenvalues per dimer: ±V. Half-filled GS = -2V
+    per dimer × 2 = -4V."""
+    from siam_vqe.hamiltonian import nio_l2_kanamori
+    V = 2.06
+    fop = nio_l2_kanamori(
+        U=0.0, U_prime=0.0, J_H=0.0,
+        V=V, eps_d=0.0, eps_p=0.0,
+    )
+    eigvals = np.linalg.eigvalsh(JordanWignerMapper().map(fop).to_matrix())
+    assert eigvals[0] == pytest.approx(-4 * V, abs=1e-8)
