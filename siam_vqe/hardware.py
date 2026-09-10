@@ -74,7 +74,7 @@ def make_runtime_estimator(
 ) -> RuntimeEstimatorV2:
     """Build an IBM Runtime EstimatorV2 at the requested resilience level.
 
-    Resilience-level meaning (qiskit-ibm-runtime >= 0.25):
+    Resilience-level meaning (qiskit-ibm-runtime >= 0.49):
         0 — no error mitigation
         1 — M3 readout-error mitigation only
         2 — M3 + ZNE (Zero Noise Extrapolation)

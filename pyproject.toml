@@ -7,16 +7,16 @@ name = "siam_vqe"
 version = "0.4.0"
 description = "VQE for single-impurity Anderson models on Qiskit, validated against EDRIXS."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Liam Schmidt" }]
 license = { text = "MIT" }
 dependencies = [
     "mthree>=2.6",
-    "qiskit~=1.2",
-    "qiskit-aer>=0.15",
-    "qiskit-nature~=0.7",
-    "qiskit-algorithms>=0.3",
-    "qiskit-ibm-runtime>=0.25",
+    "qiskit>=2.3,<3",
+    "qiskit-aer>=0.17",
+    "qiskit-nature>=0.8,<0.9",
+    "qiskit-algorithms>=0.4",
+    "qiskit-ibm-runtime>=0.49",
     "numpy>=1.26",
     "scipy>=1.11",
     "matplotlib>=3.8",
@@ -38,7 +38,7 @@ packages = ["siam_vqe"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
@@ -92,7 +92,7 @@ ignore = ["E501"]  # let formatter handle line length
 "notebooks/_04_build.py" = ["N802", "N803", "N806", "RUF001", "RUF002", "RUF003", "E501"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 files = ["siam_vqe"]
@@ -119,7 +119,9 @@ addopts = "-q --strict-markers"
 # deprecations in siam_vqe's own API usage still surface. See
 # docs/superpowers/notes/2026-05-29-pulse-deprecation-triage.md
 filterwarnings = [
-    "ignore:The property ``qiskit.circuit.instruction.Instruction.condition``:DeprecationWarning",
-    "ignore:The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.calibrations``:DeprecationWarning",
-    "ignore:The property ``qiskit.circuit.quantumcircuit.QuantumCircuit.calibrations``:DeprecationWarning",
+    # qiskit-nature 0.8 still builds UCCSD / HartreeFock on BlueprintCircuit,
+    # deprecated in Qiskit 2.1 and slated for removal in 3.0. Nothing in
+    # siam_vqe touches it; this clears once qiskit-nature moves off it.
+    "ignore:The class ``qiskit.circuit.library.blueprintcircuit.BlueprintCircuit``:DeprecationWarning",
+    "ignore:The class ``qiskit.circuit.library.n_local:DeprecationWarning",
 ]
