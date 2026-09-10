@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,6 +27,9 @@ from scipy.optimize import minimize
 from siam_vqe.mappings import to_qubit_op as _to_qubit_op
 from siam_vqe.reference_ed import EDResult
 from siam_vqe.vqe_runner import MultistartResult, VQEResult
+
+if TYPE_CHECKING:
+    from siam_vqe.xas import XASSpectrum
 
 
 @dataclass(frozen=True)
@@ -705,3 +709,112 @@ def plot_l3_observables(
         fig.savefig(base.with_suffix(".pdf"))
         fig.savefig(base.with_suffix(".png"), dpi=150)
     return axes[0]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 XAS validation layers (Layers 3-5 vs EDRIXS reference)
+# ---------------------------------------------------------------------------
+
+
+def check_layer_xas_peak_energies(
+    phase5_peaks: np.ndarray,
+    edrixs_peaks: np.ndarray,
+    tolerance_eV: float = 0.05,
+    weight_floor_frac: float = 0.01,
+    phase5_weights: np.ndarray | None = None,
+    edrixs_weights: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Layer 3: every dipole-allowed Phase-5 peak within `tolerance_eV`
+    of its nearest EDRIXS peak. Both directions: missing or spurious
+    peaks above `weight_floor_frac * max_weight` count as failures."""
+    if phase5_weights is None:
+        phase5_weights = np.ones_like(phase5_peaks)
+    if edrixs_weights is None:
+        edrixs_weights = np.ones_like(edrixs_peaks)
+
+    floor_p5 = weight_floor_frac * phase5_weights.max() if len(phase5_peaks) else 0
+    floor_ed = weight_floor_frac * edrixs_weights.max() if len(edrixs_peaks) else 0
+
+    significant_p5 = phase5_peaks[phase5_weights > floor_p5]
+    significant_ed = edrixs_peaks[edrixs_weights > floor_ed]
+
+    if len(significant_p5) != len(significant_ed):
+        return {"pass": False, "reason": "peak count mismatch",
+                "n_phase5": len(significant_p5), "n_edrixs": len(significant_ed)}
+
+    residuals = []
+    for e_p5 in significant_p5:
+        closest = np.min(np.abs(significant_ed - e_p5))
+        residuals.append(closest)
+    max_residual = max(residuals) if residuals else 0
+    return {"pass": bool(max_residual < tolerance_eV),
+            "max_residual_eV": float(max_residual),
+            "tolerance_eV": tolerance_eV,
+            "residuals_eV": residuals}
+
+
+def check_layer_xas_spectral_weight(
+    sigma_phase5: np.ndarray,
+    sigma_edrixs: np.ndarray,
+    tolerance_frac: float = 0.05,
+) -> dict[str, Any]:
+    """Layer 4: normalized L2 distance between sigma_Phase5 and sigma_EDRIXS."""
+    if sigma_phase5.shape != sigma_edrixs.shape:
+        raise ValueError("spectra must share the same omega grid")
+    l2_diff = np.linalg.norm(sigma_phase5 - sigma_edrixs)
+    l2_ref = np.linalg.norm(sigma_edrixs)
+    frac = l2_diff / l2_ref if l2_ref > 0 else float("inf")
+    return {"pass": bool(frac < tolerance_frac),
+            "l2_distance_frac": float(frac),
+            "tolerance_frac": tolerance_frac}
+
+
+def check_layer_xas_sum_rule(
+    sum_weights: float,
+    expected: float,
+    tolerance_frac: float = 0.01,
+) -> dict[str, Any]:
+    """Layer 5: |sum |<F|D|GS>|^2 - <GS|D^dag D|GS>| / <GS|D^dag D|GS>."""
+    rel = abs(sum_weights - expected) / max(abs(expected), 1e-12)
+    return {"pass": bool(rel < tolerance_frac),
+            "rel_err": float(rel),
+            "sum_weights": sum_weights,
+            "expected": expected,
+            "tolerance_frac": tolerance_frac}
+
+
+def plot_xas_spectrum(
+    phase5_spectrum: XASSpectrum,
+    *,
+    edrixs_spectrum: XASSpectrum | None = None,
+    output_path: str | None = None,
+    ax: Axes | None = None,
+) -> Axes:
+    """Plot sigma_XAS(omega) for Phase 5, optionally overlaid with EDRIXS reference.
+
+    Returns the Axes; if `output_path` provided, also saves PDF + PNG
+    (mirroring Phase 4 figure convention)."""
+    own_fig = ax is None
+    if own_fig:
+        _fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.plot(phase5_spectrum.omega_eV, phase5_spectrum.sigma,
+            label=f"Phase 5 ({phase5_spectrum.channel})", lw=2)
+    if edrixs_spectrum is not None:
+        ax.plot(edrixs_spectrum.omega_eV, edrixs_spectrum.sigma,
+                label=f"EDRIXS ({edrixs_spectrum.channel})",
+                ls="--", lw=1.5, alpha=0.7)
+    ax.set_xlabel(r"$\omega - \omega_0$ (eV)")
+    ax.set_ylabel(r"$\sigma_\mathrm{XAS}$ (arb. units)")
+    ax.legend()
+    ax.set_title(f"L-edge XAS - channel {phase5_spectrum.channel}")
+    ax.grid(alpha=0.3)
+
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig_ref = ax.get_figure()
+        fig_ref.savefig(out, bbox_inches="tight")
+        fig_ref.savefig(out.with_suffix(".png"), dpi=150, bbox_inches="tight")
+
+    return ax

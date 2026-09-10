@@ -465,3 +465,78 @@ def build_l3_multistart_seeds(
             )
         )
     return seeds
+
+
+def build_l3_xas_seeds(
+    *,
+    num_seeds: int = 4,
+    num_spin_orbitals: int = 20,
+    num_particles: tuple[int, int] = (10, 9),
+) -> list[HFState]:
+    """Build perturbed HF Slater determinants for the XAS final-state
+    sector (10, 9) — the d⁹ ²E_g configuration.
+
+    Physical reasoning: H' = H + V_core makes d-occupation
+    energetically favorable. Starting from the Phase 4 d⁸ ³A_2g with
+    one extra electron, the natural lowest-energy configuration is
+    full d↑ + full bath↑ (10 modes) and one e_g + full t_2g + full
+    bath in spin-down (9 modes). This places the added electron on
+    e_g #2 ↑.
+
+    Spec §4.2; mirrors the Phase 4 build_l3_multistart_seeds pattern.
+    Per Observation #19 the pool's (occupied, virtual) partition is
+    derived downstream from seed 0; do not pre-bake it here.
+    """
+    if num_particles != (10, 9):
+        raise NotImplementedError(
+            "build_l3_xas_seeds currently supports only the (10, 9) "
+            "XAS final-state sector. Use S_z spin-flip for (9, 10)."
+        )
+    half = num_spin_orbitals // 2  # 10
+
+    base_occupied = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                     11, 12, 13, 14, 15, 16, 17, 18, 19}
+    # Virtual in (10, 9): only mode 10 (e_g #1 ↓) is empty
+    eg_virtual_dn = 10
+    # In the up channel everything is occupied — no perturbations available.
+    # Perturbations swap virtual modes among down-spin occupations.
+
+    seed_swaps: list[list[tuple[int, int]]] = [
+        [],                            # seed 0: pure d⁹ ²E_g
+        [(11, eg_virtual_dn)],         # seed 1: flip e_g labels in spin-dn
+        [(12, eg_virtual_dn)],         # seed 2: t_2g #1 dn → e_g #1 dn
+        [(13, eg_virtual_dn)],         # seed 3: t_2g #2 dn → e_g #1 dn
+    ]
+    while len(seed_swaps) < num_seeds:
+        k = len(seed_swaps)
+        # Beyond 4: cycle through bath promotions
+        target = 15 + (k % 5)
+        seed_swaps.append([(target, eg_virtual_dn)])
+
+    seeds: list[HFState] = []
+    for swaps in seed_swaps[:num_seeds]:
+        occupied = set(base_occupied)
+        for (i, j) in swaps:
+            if i not in occupied:
+                raise ValueError(f"Mode {i} not occupied in d⁹ base seed.")
+            if j in occupied:
+                raise ValueError(f"Mode {j} already occupied in d⁹ base seed.")
+            if (i < half) != (j < half):
+                raise ValueError(f"Swap ({i}, {j}) crosses spin boundary.")
+            occupied.remove(i)
+            occupied.add(j)
+        actual_up = sum(1 for m in occupied if m < half)
+        actual_dn = sum(1 for m in occupied if m >= half)
+        if (actual_up, actual_dn) != num_particles:
+            raise ValueError(
+                f"Seed landed in sector ({actual_up}, {actual_dn}), "
+                f"expected {num_particles}."
+            )
+        seeds.append(
+            HFState(
+                occupied=tuple(sorted(occupied)),
+                num_spin_orbitals=num_spin_orbitals,
+                num_particles=num_particles,
+            )
+        )
+    return seeds
