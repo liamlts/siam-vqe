@@ -71,3 +71,20 @@ def test_inspect_multiplets_returns_table_rows():
         assert "energy_eV" in row
         assert "gap_eV" in row
     assert table[0]["gap_eV"] == pytest.approx(0.0)
+
+
+def test_compute_l3_xas_reference_returns_valid_in_sector():
+    from siam_vqe.core_hole import CoreHoleParams
+    from siam_vqe.hamiltonian_l3 import L3Params
+    from siam_vqe.reference_l3 import compute_l3_xas_reference
+
+    params = L3Params()
+    ch = CoreHoleParams()
+    ref = compute_l3_xas_reference(params, ch, num_particles=(10, 9), k_states=5)
+    assert ref.num_particles == (10, 9)
+    assert len(ref.energies) == 5
+    # Lowest eigenvalue should be ~10 × U_dc below the bare H GS (rough bound)
+    # — at least, it should be < bare-H GS at (10, 9)
+    from siam_vqe.reference_l3 import compute_l3_reference
+    ref_bare = compute_l3_reference(params, num_particles=(10, 9), k_states=1)
+    assert ref.ground_energy < ref_bare.ground_energy

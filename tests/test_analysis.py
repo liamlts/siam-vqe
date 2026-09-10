@@ -499,3 +499,66 @@ def test_plot_l3_observables_creates_pdf(tmp_path):
     import matplotlib.axes
     assert isinstance(ax, matplotlib.axes.Axes)
     assert output.exists()
+
+
+def test_check_layer_xas_peak_energies_passes_when_all_match():
+    """Each Phase-5 peak within 50 meV of an EDRIXS peak → pass."""
+    from siam_vqe.analysis import check_layer_xas_peak_energies
+
+    phase5_peaks = np.array([1.0, 3.5, 6.0])
+    edrixs_peaks = np.array([1.02, 3.49, 6.01])
+    report = check_layer_xas_peak_energies(phase5_peaks, edrixs_peaks,
+                                            tolerance_eV=0.05)
+    assert report["pass"] is True
+    assert report["max_residual_eV"] < 0.05
+
+
+def test_check_layer_xas_peak_energies_fails_with_missing_peak():
+    """A peak in EDRIXS with no Phase-5 counterpart fails the gate."""
+    from siam_vqe.analysis import check_layer_xas_peak_energies
+
+    phase5_peaks = np.array([1.0])
+    edrixs_peaks = np.array([1.0, 3.5])  # extra peak in EDRIXS
+    report = check_layer_xas_peak_energies(phase5_peaks, edrixs_peaks,
+                                            tolerance_eV=0.05)
+    assert report["pass"] is False
+
+
+def test_check_layer_xas_spectral_weight_l2_distance():
+    from siam_vqe.analysis import check_layer_xas_spectral_weight
+
+    omega = np.linspace(0, 10, 101)
+    sigma_phase5 = np.exp(-((omega - 5)**2) / 2)
+    sigma_edrixs = sigma_phase5 * 1.02  # 2% bias
+    report = check_layer_xas_spectral_weight(sigma_phase5, sigma_edrixs,
+                                              tolerance_frac=0.05)
+    assert report["pass"] is True
+    assert 0.01 < report["l2_distance_frac"] < 0.03
+
+
+def test_check_layer_xas_sum_rule_within_one_percent():
+    from siam_vqe.analysis import check_layer_xas_sum_rule
+
+    sum_weights = 2.001
+    expected = 2.000
+    report = check_layer_xas_sum_rule(sum_weights, expected,
+                                       tolerance_frac=0.01)
+    assert report["pass"] is True
+
+
+def test_plot_xas_spectrum_writes_file(tmp_path):
+    from siam_vqe.analysis import plot_xas_spectrum
+    from siam_vqe.xas import XASSpectrum
+
+    omega = np.linspace(0, 10, 101)
+    spec = XASSpectrum(
+        omega_eV=omega,
+        sigma=np.exp(-((omega - 5)**2)),
+        channel="lin_z",
+        Gamma_eV=0.5,
+        peak_energies=np.array([5.0]),
+        peak_weights=np.array([1.0]),
+    )
+    out = tmp_path / "xas.pdf"
+    plot_xas_spectrum(spec, edrixs_spectrum=None, output_path=str(out))
+    assert out.exists()

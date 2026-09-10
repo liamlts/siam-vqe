@@ -294,3 +294,30 @@ def test_build_l3_multistart_seeds_seed0_has_d8_configuration():
     n_bath = sum(1 for m in seed0.occupied if 5 <= m < 10 or m >= 15)
     assert n_d == 8, f"Seed 0 must have 8 d-electrons (³A_2g), got {n_d}"
     assert n_bath == 10, f"Seed 0 must have 10 bath electrons, got {n_bath}"
+
+
+def test_build_l3_xas_seeds_first_is_d9_2eg_hf():
+    """Seed 0 for the (10, 9) XAS sector is the d⁹ ²E_g HF determinant:
+    full d↑ + full bath↑ in spin-up, plus one e_g + full t_2g + full
+    bath in spin-down.
+
+    Mode order:
+      up: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]    (both e_g + full t_2g + full bath)
+      dn: [11, 12, 13, 14, 15, 16, 17, 18, 19]  (one e_g + full t_2g + full bath)
+    """
+    from siam_vqe.adapt_vqe import build_l3_xas_seeds
+
+    seeds = build_l3_xas_seeds(num_seeds=4, num_particles=(10, 9))
+    expected = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19}
+    assert set(seeds[0].occupied) == expected
+    assert all(hf.num_particles == (10, 9) for hf in seeds)
+
+
+def test_build_l3_xas_seeds_returns_distinct_states():
+    from siam_vqe.adapt_vqe import build_l3_xas_seeds
+
+    seeds = build_l3_xas_seeds(num_seeds=4, num_particles=(10, 9))
+    occ_sets = [set(hf.occupied) for hf in seeds]
+    for i in range(4):
+        for j in range(i + 1, 4):
+            assert occ_sets[i] != occ_sets[j], f"seeds {i} and {j} identical"

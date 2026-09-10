@@ -1,0 +1,8 @@
+[run_l3_h_prime_vqe] Mode: production
+[run_l3_h_prime_vqe] U_dc = 8.5
+[run_l3_h_prime_vqe] H' ED ground = 256.864245 eV in sector (10, 9)
+[run_l3_h_prime_vqe] H' tapered Pauli (18 qubits, 218 terms) built in 6.8 s
+[run_l3_h_prime_vqe] Pool size = 9 operators (virtuals = [10])
+[run_l3_h_prime_vqe] Done in 38.8s -- best=256.864245, median=257.212571, worst=257.492571, spread=0.628327 eV
+[run_l3_h_prime_vqe] |E_VQE - E_ED'| = 0.00 meV (pass = True)
+[run_l3_h_prime_vqe] Wrote notebooks/05_L3_h_prime_vqe_result.json

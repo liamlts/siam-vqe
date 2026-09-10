@@ -1,0 +1,14 @@
+[run_l3_xas_sim] U_dc = 8.5 eV
+[run_l3_xas_sim] Replaying Phase 4 ψ_GS ...
+  ψ_GS reconstructed: ⟨H⟩ = 267.476996 eV (JSON: 267.476996 eV) in 2.2s
+[run_l3_xas_sim] Replaying Phase 5 ψ'_GS ...
+  ψ'_GS reconstructed: ⟨H'⟩ = 256.864245 eV (JSON: 256.864245 eV) in 1.6s
+[run_l3_xas_sim] Building qEOM pool + matrices on H' ...
+  qEOM pool size = 9 (c†_a c_i form)
+  qEOM: 9 surviving excitations (S dropped 0); 4.1s
+[run_l3_xas_sim] Lifting to full JW basis ...
+  Lifts done in 0.0s
+[run_l3_xas_sim] Leading peak at E_F − E_GS = -10.612752 eV (shifted to ω₀ = 0)
+  channel lin_z: L3 pass=True, L4 pass=True (L2=0.000), L5 pass=True (Σw=0.9990 vs ⟨D†D⟩=0.9990)
+  channel lin_xy: L3 pass=True, L4 pass=True (L2=0.000), L5 pass=True (Σw=0.7500 vs ⟨D†D⟩=0.7492)
+[run_l3_xas_sim] Wrote notebooks/05_L3_xas_result.json, phase5_pass = True

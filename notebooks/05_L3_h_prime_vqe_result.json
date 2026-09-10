@@ -1,0 +1,36 @@
+{
+  "mode": "production",
+  "params": {
+    "F2_dd": 9.787,
+    "F4_dd": 6.078,
+    "U_dd": 7.3,
+    "ten_dq": 0.56,
+    "cf_bath_split": 1.44,
+    "Delta": 4.7,
+    "V_eg": 2.06,
+    "V_t2g": 1.21,
+    "num_d_orbitals": 5,
+    "num_bath_orbitals": 5
+  },
+  "core_hole": {
+    "U_dc": 8.5,
+    "include_multipoles": false
+  },
+  "n_seeds": 4,
+  "wall_time_seconds": 38.79114007949829,
+  "pool_size": 9,
+  "best_seed_index": 0,
+  "best_energy": 256.86424470348567,
+  "median_energy": 257.21257142857115,
+  "worst_energy": 257.49257142857124,
+  "spread": 0.6283267250855715,
+  "ed_ground_energy": 256.864244703484,
+  "abs_err_eV": 1.6484591469634324e-12,
+  "layer1_pass": true,
+  "operators_picked": [
+    4
+  ],
+  "theta": [
+    0.03315600000000001
+  ]
+}

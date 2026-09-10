@@ -6,13 +6,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import scipy.sparse.linalg as spla
+from qiskit_nature.second_q.operators import FermionicOp
 
 from siam_vqe.hamiltonian_l3 import L3Params, nio_l3_hamiltonian
 from siam_vqe.reference_ed import _build_sector_basis, _fermionic_op_to_sparse_matrix
+
+if TYPE_CHECKING:
+    from siam_vqe.core_hole import CoreHoleParams
 
 
 @dataclass(frozen=True)
@@ -40,15 +44,53 @@ class L3Reference:
     basis: tuple[int, ...]
     observables: dict[str, float]
 
+    @property
+    def num_particles(self) -> tuple[int, int]:
+        """Alias for ``sector`` (Qiskit Nature naming)."""
+        return self.sector
+
+    @property
+    def energies(self) -> np.ndarray:
+        """All cached eigenvalues, ascending: [ground, *excited]."""
+        return np.concatenate(([self.ground_energy], self.excited_energies))
+
 
 def compute_l3_reference(
     params: L3Params,
     *,
-    sector: tuple[int, int] = (9, 9),
+    sector: tuple[int, int] | None = None,
+    num_particles: tuple[int, int] | None = None,
     k_states: int = 6,
+    hamiltonian_override: FermionicOp | None = None,
 ) -> L3Reference:
-    """Exact-diagonalize the L3 Hamiltonian in the (n_up, n_down) sector."""
-    H = nio_l3_hamiltonian(params)
+    """Exact-diagonalize the L3 Hamiltonian in the (n_up, n_down) sector.
+
+    Parameters
+    ----------
+    params
+        L3 Hamiltonian parameters.
+    sector, num_particles
+        (n_up, n_down) particle counts. ``num_particles`` is an alias kept
+        for Qiskit Nature compatibility. Exactly one may be specified; if
+        neither is given, defaults to (9, 9). Specifying both raises
+        ``ValueError``.
+    k_states
+        Number of lowest eigenpairs to compute via ``scipy.sparse.linalg.eigsh``.
+    hamiltonian_override
+        If provided, exact-diagonalize this operator instead of
+        ``nio_l3_hamiltonian(params)``. Used by ``compute_l3_xas_reference``
+        to share the sector-basis/observables machinery for H' = H + V_core.
+    """
+    if sector is not None and num_particles is not None:
+        raise ValueError(
+            "Pass at most one of `sector` or `num_particles` (they are aliases)."
+        )
+    if num_particles is not None:
+        sector = num_particles
+    if sector is None:
+        sector = (9, 9)
+
+    H = nio_l3_hamiltonian(params) if hamiltonian_override is None else hamiltonian_override
     basis = _build_sector_basis(
         num_d_spin_orbitals=params.num_spin_orbitals,
         n_up=sector[0],
@@ -83,6 +125,25 @@ def compute_l3_reference(
         sector=partial.sector,
         basis=partial.basis,
         observables=observables,
+    )
+
+
+def compute_l3_xas_reference(
+    params: L3Params,
+    ch: CoreHoleParams,
+    *,
+    num_particles: tuple[int, int] = (10, 9),
+    k_states: int = 10,
+) -> L3Reference:
+    """scipy.sparse-ED reference for H' = H + V_core in the (n_up, n_dn)
+    sector. Mirrors ``compute_l3_reference`` but on H' instead of H."""
+    from siam_vqe.core_hole import nio_l3_core_hole_hamiltonian
+    H_prime = nio_l3_core_hole_hamiltonian(params, ch)
+    return compute_l3_reference(
+        params,
+        num_particles=num_particles,
+        k_states=k_states,
+        hamiltonian_override=H_prime,
     )
 
 

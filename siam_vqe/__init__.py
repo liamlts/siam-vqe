@@ -6,6 +6,7 @@ from siam_vqe.adapt_vqe import (
     HFState,
     apply_exp_iT,
     build_l3_multistart_seeds,
+    build_l3_xas_seeds,
     build_uccsd_pool,
     hartree_fock_initial_state,
     hf_state_to_tapered_statevector,
@@ -27,6 +28,9 @@ from siam_vqe.analysis import (
     check_layer4_multistart_l3,
     check_layer5_observables_l3,
     check_layer6_adapt_trace,
+    check_layer_xas_peak_energies,
+    check_layer_xas_spectral_weight,
+    check_layer_xas_sum_rule,
     check_multistart_spread,
     check_observable_agreement,
     check_observable_agreement_multi,
@@ -36,8 +40,21 @@ from siam_vqe.analysis import (
     plot_adapt_convergence,
     plot_convergence,
     plot_l3_observables,
+    plot_xas_spectrum,
 )
 from siam_vqe.ansatz import efficient_su2_ansatz, uccsd_ansatz
+from siam_vqe.core_hole import (
+    CoreHoleParams,
+    nio_l3_core_hole_hamiltonian,
+    tapered_l3_h_prime_pauli,
+    v_core_operator,
+)
+from siam_vqe.dipole import (
+    DipoleChannel,
+    angular_coefficients,
+    dipole_channel,
+    dipole_operator,
+)
 from siam_vqe.hamiltonian import hubbard_dimer, nio_l1_anderson, observables_dimer, observables_l1
 from siam_vqe.hamiltonian_l3 import (
     L3Params,
@@ -55,11 +72,20 @@ from siam_vqe.observables_l3 import (
     evaluate_observable_on_sector,
     make_l3_observables,
 )
+from siam_vqe.qeom import (
+    QEOMResult,
+    build_eom_matrices,
+    compute_spectral_weights,
+    cross_sector_matrix_element,
+    solve_qeom,
+    solve_qeom_struct,
+)
 from siam_vqe.reference_ed import EDResult, exact_diag
 from siam_vqe.reference_edrixs import compute_l1_levels
 from siam_vqe.reference_l3 import (
     L3Reference,
     compute_l3_reference,
+    compute_l3_xas_reference,
     inspect_multiplets,
     load_l3_reference,
     save_l3_reference,
@@ -78,13 +104,20 @@ from siam_vqe.vqe_runner import (
     run_vqe,
     run_vqe_multistart,
 )
+from siam_vqe.xas import (
+    XASSpectrum,
+    assemble_xas,
+    lorentzian,
+)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AdaptConfig",
     "AdaptMultistartResult",
     "AdaptResult",
+    "CoreHoleParams",
+    "DipoleChannel",
     "EDResult",
     "EnergyMatchReport",
     "ExpressivityReport",
@@ -96,12 +129,18 @@ __all__ = [
     "MultistartResult",
     "ObservableReport",
     "OverlapReport",
+    "QEOMResult",
     "ResilienceGuardrailReport",
     "VQEResult",
+    "XASSpectrum",
     "__version__",
+    "angular_coefficients",
     "apply_exp_iT",
+    "assemble_xas",
     "atomic_multiplet_energies",
+    "build_eom_matrices",
     "build_l3_multistart_seeds",
+    "build_l3_xas_seeds",
     "build_uccsd_pool",
     "check_ansatz_expressivity",
     "check_energy_match",
@@ -109,6 +148,9 @@ __all__ = [
     "check_layer4_multistart_l3",
     "check_layer5_observables_l3",
     "check_layer6_adapt_trace",
+    "check_layer_xas_peak_energies",
+    "check_layer_xas_spectral_weight",
+    "check_layer_xas_sum_rule",
     "check_multistart_spread",
     "check_observable_agreement",
     "check_observable_agreement_multi",
@@ -117,7 +159,12 @@ __all__ = [
     "compare_energies",
     "compute_l1_levels",
     "compute_l3_reference",
+    "compute_l3_xas_reference",
     "compute_reference_observables",
+    "compute_spectral_weights",
+    "cross_sector_matrix_element",
+    "dipole_channel",
+    "dipole_operator",
     "efficient_su2_ansatz",
     "evaluate_observable_on_sector",
     "exact_diag",
@@ -127,10 +174,12 @@ __all__ = [
     "inspect_multiplets",
     "lift_tapered_to_full_sector",
     "load_l3_reference",
+    "lorentzian",
     "make_l3_observables",
     "make_noisy_estimator",
     "make_runtime_estimator",
     "nio_l1_anderson",
+    "nio_l3_core_hole_hamiltonian",
     "nio_l3_hamiltonian",
     "nio_l3_impurity_only",
     "num_tapered_qubits",
@@ -140,6 +189,7 @@ __all__ = [
     "plot_adapt_convergence",
     "plot_convergence",
     "plot_l3_observables",
+    "plot_xas_spectrum",
     "pool_to_tapered_paulis",
     "project_full_to_tapered",
     "racah_BC",
@@ -150,8 +200,12 @@ __all__ = [
     "save_l3_reference",
     "screen_gradients",
     "slater_to_u_tensor",
+    "solve_qeom",
+    "solve_qeom_struct",
+    "tapered_l3_h_prime_pauli",
     "tapered_l3_pauli",
     "to_qubit_op",
     "transpile_for_backend",
     "uccsd_ansatz",
+    "v_core_operator",
 ]
