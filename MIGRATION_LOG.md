@@ -132,12 +132,24 @@ upstream's to resolve.
 Run against qiskit 2.5.2 / aer 0.17.2 / nature 0.8.0 / algorithms 0.4.0 /
 ibm-runtime 0.49.0 / mthree 3.0.0 in a clean virtual environment.
 
+CI numbers below are from the same GitHub Actions runner type, so the
+comparison is like-for-like: `main` on Python 3.11 / qiskit 1.4.5 versus this
+branch on Python 3.12.14 / qiskit 2.5.2.
+
 | Gate | Qiskit 1.4.5 (baseline) | Qiskit 2.5.2 |
 |---|---|---|
 | Full suite | 256 passed / 1 xfailed | **256 passed / 1 xfailed** |
+| Pytest wall time (CI) | 1112.93 s (18m32s) | **633.60 s (10m33s)** |
+| Warnings (CI) | 71 | **10** |
 | `ruff check siam_vqe` | clean | clean |
-| `mypy siam_vqe` | clean (target 3.11) | clean (target 3.12) |
+| `mypy siam_vqe` | clean (target 3.11) | clean (target 3.12), 20 files |
 | Deprecations owned by `siam_vqe` | 1 (`EfficientSU2`) | **0** |
+
+An unplanned result worth recording: the suite got **43% faster** (1113 s →
+634 s) and warnings dropped 86% (71 → 10). Neither was a goal of this work.
+The speedup is upstream — Qiskit 2.x internals plus the removal of the
+deprecated shim paths the 1.x stack was routing through — not any change to
+test scope, since the test counts are identical.
 
 The test result is identical to the baseline — no test was skipped, xfailed, or
 rewritten to accommodate 2.x. The single `x` is the pre-existing xfail.
