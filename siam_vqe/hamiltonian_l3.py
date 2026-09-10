@@ -173,7 +173,8 @@ def slater_to_u_tensor(F2: float, F4: float, F0: float = 0.0) -> np.ndarray:
             f"U tensor has nonzero imaginary part: max|imag| = "
             f"{np.max(np.abs(U_real.imag))}"
         )
-    return U_real.real
+    u_out: np.ndarray = U_real.real
+    return u_out
 
 
 def nio_l3_impurity_only(params: L3Params, F0: float | None = None) -> FermionicOp:

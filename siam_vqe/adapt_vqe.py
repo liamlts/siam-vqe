@@ -10,13 +10,15 @@ virtual), particle- and S_z-conserving.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from qiskit.quantum_info import SparsePauliOp
 from qiskit_nature.second_q.operators import FermionicOp
 from scipy.optimize import minimize
+from scipy.sparse import spmatrix
 from scipy.sparse.linalg import expm_multiply
 
 from siam_vqe.tapering_l3 import project_full_to_tapered, tapered_l3_pauli
@@ -196,7 +198,8 @@ def hf_state_to_tapered_statevector(hf: HFState) -> np.ndarray:
             f"Likely the chosen HF determinant is not in the requested sector "
             f"or the parity-tapering convention is misaligned."
         )
-    return psi_tapered / norm
+    psi_normalised: np.ndarray = psi_tapered / norm
+    return psi_normalised
 
 
 def screen_gradients(
@@ -234,7 +237,7 @@ def screen_gradients(
 def apply_exp_iT(
     psi: np.ndarray,
     operators: Sequence[SparsePauliOp],
-    parameters: Sequence[float],
+    parameters: Sequence[float] | np.ndarray,
 ) -> np.ndarray:
     """Apply U(θ) = exp(θ_n · iT_n) ... exp(θ_1 · iT_1) to |ψ⟩.
 
@@ -275,20 +278,20 @@ class AdaptResult:
     final_energy: float
     theta: np.ndarray
     operators_picked: tuple[int, ...]
-    trace: tuple[dict, ...]
+    trace: tuple[dict[str, Any], ...]
     converged_reason: str  # 'gradient', 'max_operators', or 'max_outer'
 
 
 def _build_energy_callable(
-    H_mat,
+    H_mat: spmatrix,
     pool_paulis: Sequence[SparsePauliOp],
     operators_picked: Sequence[int],
     psi_0: np.ndarray,
-):
+) -> Callable[[np.ndarray], float]:
     """Return a callable θ → ⟨ψ_0| U†(θ) H U(θ) |ψ_0⟩."""
     selected = [pool_paulis[k] for k in operators_picked]
 
-    def energy(theta_vec):
+    def energy(theta_vec: np.ndarray) -> float:
         psi = apply_exp_iT(psi_0, selected, theta_vec)
         return float(np.real(np.vdot(psi, H_mat @ psi)))
 
@@ -317,7 +320,7 @@ def run_adapt_vqe(
     psi = psi_0.copy()
     theta: list[float] = []
     operators_picked: list[int] = []
-    trace: list[dict] = []
+    trace: list[dict[str, Any]] = []
 
     converged_reason = "max_outer"
     for outer in range(config.max_operators + 1):

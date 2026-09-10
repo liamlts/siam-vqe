@@ -117,6 +117,13 @@ def observables_dimer() -> dict[str, FermionicOp]:
     }
 
 
+# L1 mode ordering: see nio_l1_anderson docstring. Modes 0 and 2 are the
+# impurity d-orbital (up, dn); 1 and 3 are the ligand p-orbital. Downstream
+# consumers (e.g. core-hole helpers) should import this constant rather than
+# hardcoding indices, so a single source of truth governs the L1 layout.
+_L1_IMPURITY_MODES: tuple[int, int] = (0, 2)
+
+
 def nio_l1_anderson(U: float, V: float, eps_d: float, eps_p: float) -> FermionicOp:
     """L1 NiO single-orbital Anderson impurity model on 4 spin-orbitals.
 
@@ -125,6 +132,10 @@ def nio_l1_anderson(U: float, V: float, eps_d: float, eps_p: float) -> Fermionic
         1 = p_up    (bath, up)
         2 = d_dn    (impurity, down)
         3 = p_dn    (bath, down)
+
+    The impurity mode indices are also exported as `_L1_IMPURITY_MODES`
+    for downstream consumers that need to act on the impurity orbital
+    (e.g. the L1 core-hole potential).
 
     H = eps_d (n_0 + n_2)
         + eps_p (n_1 + n_3)

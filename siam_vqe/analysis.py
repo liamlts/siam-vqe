@@ -26,9 +26,10 @@ from scipy.optimize import minimize
 
 from siam_vqe.mappings import to_qubit_op as _to_qubit_op
 from siam_vqe.reference_ed import EDResult
-from siam_vqe.vqe_runner import MultistartResult, VQEResult
+from siam_vqe.vqe_runner import AdaptMultistartResult, MultistartResult, VQEResult
 
 if TYPE_CHECKING:
+    from siam_vqe.reference_l3 import L3Reference
     from siam_vqe.xas import XASSpectrum
 
 
@@ -691,11 +692,11 @@ def check_mitigation_effectiveness(
 
 def check_layer2_overlap_l3(
     psi_vqe_tapered: np.ndarray,
-    ref,  # L3Reference
+    ref: L3Reference,
     *,
     threshold: float = 0.85,
     degeneracy_eV: float = 0.010,
-) -> dict:
+) -> dict[str, Any]:
     """Layer 2: overlap of VQE statevector with scipy-ED ground state.
 
     Lifts the 18-qubit tapered statevector back to the (9, 9) sector basis,
@@ -744,12 +745,12 @@ def check_layer2_overlap_l3(
 
 def check_layer5_observables_l3(
     vqe_observables: dict[str, float],
-    ref,  # L3Reference
+    ref: L3Reference,
     *,
     rel_tol: float = 0.05,
     abs_tol: float = 0.05,
     abs_tol_threshold: float = 0.01,
-) -> dict:
+) -> dict[str, Any]:
     """Layer 5: per-observable relative-error check with abs-tol fallback near zero.
 
     For each observable in `ref.observables`:
@@ -757,7 +758,7 @@ def check_layer5_observables_l3(
       - Else: use |VQE - ED| / |ED| < rel_tol (relative mode).
     Returns a dict with overall pass/fail and per-observable details.
     """
-    details: dict[str, dict] = {}
+    details: dict[str, dict[str, Any]] = {}
     overall_pass = True
 
     for key, ed_val in ref.observables.items():
@@ -789,11 +790,11 @@ def check_layer5_observables_l3(
 
 
 def check_layer4_multistart_l3(
-    multistart_result,  # AdaptMultistartResult
+    multistart_result: AdaptMultistartResult,
     *,
     layer1_passed: bool,
     spread_threshold: float = 0.1,
-) -> dict:
+) -> dict[str, Any]:
     """Layer 4: multistart spread with L2 soft-cluster carryover.
 
     - If spread < threshold: strict pass.
@@ -822,16 +823,16 @@ def check_layer4_multistart_l3(
 
 
 def check_layer6_adapt_trace(
-    trace,  # tuple[dict]
+    trace: tuple[dict[str, Any], ...],
     *,
     noise_floor_eV: float = 0.001,
-) -> dict:
+) -> dict[str, Any]:
     """Layer 6: ADAPT convergence trace must be monotonic (within noise floor).
 
     A violation is energy[i+1] > energy[i] + noise_floor_eV at any iteration
     where an operator was appended.
     """
-    violations: list[dict] = []
+    violations: list[dict[str, Any]] = []
     prev_E = None
     for row in trace:
         if row["event"] != "operator_added":
@@ -852,10 +853,10 @@ def check_layer6_adapt_trace(
 
 
 def plot_adapt_convergence(
-    trace,
+    trace: tuple[dict[str, Any], ...],
     *,
     ed_reference: float | None = None,
-    output_path=None,
+    output_path: str | Path | None = None,
 ) -> Axes:
     """E vs operator count + g_max on twin axis.
 
@@ -900,7 +901,7 @@ def plot_l3_observables(
     vqe_observables: dict[str, float],
     ed_observables: dict[str, float],
     *,
-    output_path=None,
+    output_path: str | Path | None = None,
 ) -> Axes:
     """Side-by-side bar chart of VQE vs ED observables.
 
@@ -911,7 +912,7 @@ def plot_l3_observables(
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    def _bars(ax, keys, title):
+    def _bars(ax: Axes, keys: list[str], title: str) -> None:
         x = np.arange(len(keys))
         w = 0.35
         ax.bar(x - w/2, [vqe_observables[k] for k in keys], width=w, label="VQE",
@@ -932,7 +933,8 @@ def plot_l3_observables(
         base = Path(output_path).with_suffix("")
         fig.savefig(base.with_suffix(".pdf"))
         fig.savefig(base.with_suffix(".png"), dpi=150)
-    return axes[0]
+    first_ax: Axes = axes[0]
+    return first_ax
 
 
 # ---------------------------------------------------------------------------
@@ -1018,8 +1020,7 @@ def plot_xas_spectrum(
 
     Returns the Axes; if `output_path` provided, also saves PDF + PNG
     (mirroring Phase 4 figure convention)."""
-    own_fig = ax is None
-    if own_fig:
+    if ax is None:
         _fig, ax = plt.subplots(figsize=(8, 5))
 
     ax.plot(phase5_spectrum.omega_eV, phase5_spectrum.sigma,
@@ -1038,6 +1039,7 @@ def plot_xas_spectrum(
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         fig_ref = ax.get_figure()
+        assert isinstance(fig_ref, Figure)
         fig_ref.savefig(out, bbox_inches="tight")
         fig_ref.savefig(out.with_suffix(".png"), dpi=150, bbox_inches="tight")
 

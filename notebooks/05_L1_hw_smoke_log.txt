@@ -1,0 +1,37 @@
+Task 3e-9 — real ibm_marrakesh smoke run (SamplerV2/Batch dispatch confirmation)
+Date: 2026-05-29
+Command: python -u scripts/run_l1_xas_hw.py --backend ibm_marrakesh --smoke --shots 1024 --output /tmp/l1_hw_smoke.json
+
+Pre-flight: account OK; operational backends ['ibm_kingston', 'ibm_marrakesh', 'ibm_fez'];
+ibm_marrakesh operational, pending_jobs=2.
+
+Result (real hardware):
+  E_GS    = -6.421966 eV
+  E'_GS   = -11.902427 eV
+  ΔE      = -5.480462 eV  (leading XAS peak position, pre-shift)
+  D_JW: 4 qubits, 4 Pauli terms
+  [smoke] Re=-0.0039 Im=0.0332 finite=True
+  [smoke] OK — end-to-end SamplerV2/Batch dispatch confirmed in 626.0s
+
+Interpretation: a single unmitigated Hadamard Re/Im term (1024 shots) of the L1
+cross-sector dipole matrix element, dispatched through qiskit_ibm_runtime.SamplerV2
+inside a Runtime Batch on real ibm_marrakesh hardware. Re/Im are near zero
+(noise-dominated, as expected for an unmitigated single term) — the smoke validates
+DISPATCH, not accuracy. End-to-end path is proven: ISA transpile → Batch → SamplerV2
+→ counts → ⟨Z_anc⟩.
+
+Two issues surfaced and fixed during this run (neither cost queue budget on the
+substantive result):
+  1. First attempt failed at transpile time (no job submitted): real IBM backends
+     advertise the ibm_dynamic_circuits translation plugin (needs qiskit-ibm-transpiler
+     extra, not installed). Fixed by pinning translation_method="translator" in
+     compute_hadamard_test's isa_backend path (commit 58ca7556), matching
+     hardware.transpile_for_backend.
+  2. After [smoke] OK printed, the process crashed with ConnectionResetError during
+     Batch.__exit__ → close_session (transient network failure on the session-close
+     PATCH, after the result was obtained). Fixed via _tolerant_batch wrapper
+     (commit e5e80c83) so close-time network errors are logged and ignored; body
+     errors still propagate.
+
+Both are sim/hardware divergences that the FakeMarrakesh rehearsal could not catch —
+the justification for insisting on a real smoke as the migration gate.
