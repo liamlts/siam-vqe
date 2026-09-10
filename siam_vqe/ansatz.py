@@ -12,7 +12,7 @@ from typing import Literal
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import EfficientSU2
+from qiskit.circuit.library import efficient_su2
 from qiskit_nature.second_q.circuit.library import UCCSD, HartreeFock
 from qiskit_nature.second_q.mappers import JordanWignerMapper, ParityMapper
 
@@ -26,13 +26,15 @@ def efficient_su2_ansatz(
     seed: int | None = None,
 ) -> tuple[QuantumCircuit, np.ndarray]:
     """Hardware-efficient ansatz. Returns (circuit, initial_point)."""
-    ansatz = EfficientSU2(
+    # The function form (Qiskit >=2.1) returns a plain QuantumCircuit already
+    # built from gates, so the .decompose() the class form needed is gone. The
+    # two are bit-identical: same parameter count, depth, and statevector.
+    circuit = efficient_su2(
         num_qubits=num_qubits,
         reps=reps,
         entanglement=entanglement,
         insert_barriers=False,
     )
-    circuit = ansatz.decompose()
     rng = np.random.default_rng(seed)
     x0 = rng.normal(loc=0.0, scale=0.1, size=circuit.num_parameters)
     return circuit, x0

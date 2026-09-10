@@ -7,10 +7,12 @@ it. The simulator-only helpers make_noisy_estimator and run_manual_zne retain
 qiskit.primitives.BackendEstimatorV2 for the completed L2 noise study.
 
 This module does NOT build hand-rolled noise models. It relies on Aer's
-``AerSimulator.from_backend()`` which extracts calibration / readout / pulse-
-error data from the supplied (fake or real) backend.
+``AerSimulator.from_backend()``, which derives gate and readout error from the
+supplied (fake or real) backend's ``Target``. Under Qiskit 1.x this also drew
+on pulse-level calibration data; the Pulse package was removed in Qiskit 2.0,
+so the Target is now the sole source.
 
-API note (Qiskit ≥1.2 / Aer ≥0.15)
+API note (Qiskit ≥2.3 / Aer ≥0.17)
 ------------------------------------
 ``BackendEstimatorV2`` derives shot count from ``default_precision`` via
 shots = ⌈1 / precision²⌉. There is no ``default_shots`` constructor kwarg.

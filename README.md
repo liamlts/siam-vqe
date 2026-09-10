@@ -80,8 +80,8 @@ measured device noise on a near-identity circuit, not Kondo physics.
 pip install -e ".[dev]"
 ```
 
-Python 3.11+ required. Note that the project currently pins `qiskit~=1.2`;
-migrating to Qiskit 2.x is the next item on the roadmap.
+Python 3.12+ required. The project runs on Qiskit 2.x (`qiskit>=2.3`), with
+qiskit-nature 0.8, qiskit-algorithms 0.4, and qiskit-ibm-runtime 0.49.
 
 ## Run
 
@@ -108,8 +108,6 @@ sweep — which are too slow for the notebooks.
 
 ## Roadmap
 
-- Qiskit 2.x migration, which is also the real fix for the remaining
-  dependency-internal deprecation noise.
 - Phase 6: a qEOM RIXS map I(ω_in, ω_loss) via the Kramers–Heisenberg
   cross-section, built from the Phase 5 primitives.
 - Reconciling the ~40% spectral-weight gap between the Path-A EDRIXS
