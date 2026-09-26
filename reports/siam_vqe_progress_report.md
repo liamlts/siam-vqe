@@ -35,9 +35,9 @@ implemented test-first; the full suite stands at **256 passed / 1 xfailed**.
 | **5 — qEOM + XAS** | excited states, L-edge XAS | — | 18 | $L_2$ vs ED $\approx 4\times10^{-6}$ | merged |
 | **5b — Hardware** | ISA-correct M3/ZNE, real run | 4 | 5 (+anc) | 4/4 ISA-dispatch; noise-dominated | merged |
 
-Repository `liamlts/research-cowork`, package `siam_vqe` (v0.4.0); `main` at merge
-commit `648c125c` after PR #4 (Phase 5b) and PR #5 (`_retranslate_to_basis`
-Qiskit-2.0 cleanup).
+Results are for package `siam_vqe` v0.4.0, the state after Phase 5b and the
+`_retranslate_to_basis` Qiskit-2.0 cleanup. The package was developed in a
+private research repository and moved here afterwards.
 
 # 2. System and parameters
 
@@ -284,7 +284,4 @@ has no session TTL/network and could not surface it.
 
 - Haverkort, Zwierzycki, Andersen, *Phys. Rev. B* **85**, 165113 (2012).
 - EDRIXS pedagogical examples 3 and 6.
-- Repository: `liamlts/research-cowork`, package `siam_vqe`; `main` @ `648c125c`.
-- Phase PRs: #1 (L2 noise study), #4 (Phase 5b hardware), #5 (`_retranslate_to_basis`
-  Qiskit-2.0 cleanup). Per-phase specs, plans, and closeout notes under
-  `siam_vqe/docs/superpowers/`.
+- Code: this repository, package `siam_vqe` v0.4.0.

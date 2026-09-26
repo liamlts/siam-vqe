@@ -193,6 +193,6 @@ Two honest caveats on the local verification, neither of which CI inherits:
 - `StatevectorEstimator(seed=...)` in `run_vqe` remains a no-op at exact
   precision.
 - CI still runs a single Python version with no scheduled run.
-- **The private `research-cowork` copy of this package still pins
+- **The private development copy of this package still pins
   `qiskit~=1.2`.** Once this lands, the two diverge and the private tree becomes
   the stale one. That inversion is worth resolving.
